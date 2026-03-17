@@ -59,7 +59,7 @@ jobs:
         run: scp -i ~/.ssh/id_rsa docker-compose.yml ubuntu@${{ secrets.DNSC_SERVER_IP }}:dnsc/docker-compose.yml
 
       - name: Copy env file to server
-        run: scp -i ~/.ssh/id_rsa backend/.env ubuntu@${{ secrets.DNSC_SERVER_IP }}:dnsc/.env
+        run: scp -i ~/.ssh/id_rsa .env ubuntu@${{ secrets.DNSC_SERVER_IP }}:dnsc/.env
 
       - name: Deploy to Server
         run: ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "cd dnsc && docker compose pull && docker compose up -d --remove-orphans"
