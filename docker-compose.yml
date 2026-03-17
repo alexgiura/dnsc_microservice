@@ -25,10 +25,7 @@ services:
       
   dnsc-frontend:
     container_name: dnsc-frontend
-    image: dnsc-frontend:latest
-    build:
-      context: ./vue-app
-      dockerfile: Dockerfile
+    image: alexgiura/dnsc-frontend:prod
     restart: unless-stopped
     ports:
     - "3000:3000"
@@ -38,10 +35,7 @@ services:
 
   dnsc-backend:
     container_name: dnsc-backend
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    image: dnsc-backend:latest
+    image: alexgiura/dnsc-backend:prod
     restart: unless-stopped
     env_file: .env
     environment:
