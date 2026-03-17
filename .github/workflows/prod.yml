@@ -47,7 +47,7 @@ jobs:
           ssh-keyscan ${{ secrets.DNSC_SERVER_IP }} >> ~/.ssh/known_hosts
 
       - name: Debug SSH Connection
-        run: ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@${{ secrets.DNSC_SERVER_IP }} "echo SSH connection successful!"
+        run: ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@${{ secrets.ERP_SERVER_IP }} "echo SSH connection successful!"
 
       - name: Create dnsc directory structure
         run: ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "mkdir -p ~/dnsc/letsencrypt"
