@@ -8,17 +8,12 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM nginx:alpine AS runner
 
-WORKDIR /app
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-COPY --from=builder /app/.output /app/.output
-COPY --from=builder /app/package.json /app/package.json
-
-ENV NODE_ENV=production
-ENV HOST=0.0.0.0
-ENV PORT=3000
+RUN echo 'server { listen 3000; root /usr/share/nginx/html; index index.html; location / { try_files $uri $uri/ /index.html; } }' > /etc/nginx/conf.d/default.conf
 
 EXPOSE 3000
 
-CMD ["node", ".output/server/index.mjs"]
+CMD ["nginx", "-g", "daemon off;"]
