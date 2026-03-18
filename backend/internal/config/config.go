@@ -13,14 +13,12 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// AppSettings holds configuration for the API server.
 type AppSettings struct {
 	ServerPort  string `env:"SERVER_PORT" envDefault:"8080"`
 	Environment string `env:"ENVIRONMENT" envDefault:"development"`
 	DebugMode   bool   `env:"DEBUG_MODE" envDefault:"false"`
 }
 
-// DatabaseSettings holds configuration related to the PostgreSQL database.
 type DatabaseSettings struct {
 	User     string `env:"POSTGRES_DB_USER" envDefault:"postgres"`
 	Password string `env:"POSTGRES_DB_PASSWORD" envDefault:"postgres"`
@@ -30,32 +28,56 @@ type DatabaseSettings struct {
 	SSLMode  string `env:"POSTGRES_DB_SSLMODE" envDefault:"require"`
 }
 
-// Config holds configuration for the API and database.
+type PulseliveConfig struct {
+	BaseURL string `env:"PULSELIVE_BASE_URL" envDefault:"https://content-ecb.pulselive.com/content/ecb/text/EN/"`
+	Timeout int    `env:"PULSELIVE_TIMEOUT" envDefault:"5"`
+}
+
+type CentralConfig struct {
+	BaseURL string `env:"CENTRAL_BASE_URL" envDefault:"http://central-management-system:8080"`
+	Timeout int    `env:"CENTRAL_TIMEOUT" envDefault:"5"`
+}
+
+type ArticleImportConfig struct {
+	PageSize int `env:"ARTICLE_PAGE_SIZE" envDefault:"20"`
+	MaxPages int `env:"ARTICLE_MAX_PAGES" envDefault:"3"`
+	Interval int `env:"ARTICLE_IMPORT_INTERVAL" envDefault:"60"`
+	Timeout  int `env:"ARTICLE_IMPORT_TIMEOUT" envDefault:"30"`
+}
+
+type ArticleSyncConfig struct {
+	BatchSize   int `env:"ARTICLE_SYNC_BATCH_SIZE" envDefault:"50"`
+	MaxAttempts int `env:"ARTICLE_SYNC_MAX_ATTEMPTS" envDefault:"5"`
+	Interval    int `env:"ARTICLE_SYNC_INTERVAL" envDefault:"120"`
+	Timeout     int `env:"ARTICLE_SYNC_TIMEOUT" envDefault:"30"`
+}
+
 type Config struct {
 	AppSettings      AppSettings
 	DatabaseSettings DatabaseSettings
+	Pulselive        PulseliveConfig
+	Central          CentralConfig
+	ArticleImport    ArticleImportConfig
+	ArticleSync      ArticleSyncConfig
 }
 
-// ConnectPostgreSQL connects to PostgreSQL database and returns a connection pool
 func ConnectPostgreSQL(ctx context.Context, cfg *Config) (*pgxpool.Pool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	dbConnectString := cfg.PostgreSQLConnectionString()
-	
+
 	config, err := pgxpool.ParseConfig(dbConnectString)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse database config: %w", err)
 	}
 
-	// Configure connection pool settings
 	config.MaxConns = 10
 	config.MinConns = 2
 	config.MaxConnLifetime = 30 * time.Minute
 	config.MaxConnIdleTime = 5 * time.Minute
 	config.HealthCheckPeriod = 1 * time.Minute
 
-	// Retry logic for establishing the connection pool
 	const maxRetries = 3
 	const retryDelay = 1 * time.Second
 
@@ -79,19 +101,16 @@ func ConnectPostgreSQL(ctx context.Context, cfg *Config) (*pgxpool.Pool, error) 
 	return nil, fmt.Errorf("unable to establish database connection after %d retries: %w", maxRetries, err)
 }
 
-// Load loads the configuration from environment variables and returns a Config struct.
 func Load() (*Config, error) {
 	cfg := &Config{}
 
-	// Load environment variables from .env file in backend directory
-	// Get the current file path (this file: dnsc_microservice/internal/config/config.go)
+	// Get the current file path
 	_, currentFilePath, _, _ := runtime.Caller(0)
-	
-	// Navigate to backend directory: 
-	// dnsc_microservice/internal/config -> dnsc_microservice/internal -> dnsc_microservice -> backend
+
+	// Navigate to backend directory:
 	backendPath := filepath.Join(filepath.Dir(currentFilePath), "..", "..", "..")
 	envFilePath := filepath.Join(backendPath, ".env")
-	
+
 	// Load the .env file from backend directory
 	err := godotenv.Load(envFilePath)
 	if err != nil {
@@ -100,29 +119,26 @@ func Load() (*Config, error) {
 		log.Printf("✅ Loaded .env file from: %s\n", envFilePath)
 	}
 
-	// Parse the configuration from environment variables
 	if err := env.Parse(cfg); err != nil {
 		return nil, fmt.Errorf("error loading configuration: %s", err)
 	}
 
-	// Basic validation for required app settings
 	if cfg.AppSettings.ServerPort == "" {
 		return nil, fmt.Errorf("invalid config: SERVER_PORT must not be empty")
 	}
-	
+
 	log.Printf("✅ Loaded config - ServerPort: %s, Environment: %s\n",
 		cfg.AppSettings.ServerPort, cfg.AppSettings.Environment)
 
 	return cfg, nil
 }
 
-// PostgreSQLConnectionString generates the PostgreSQL connection string
 func (cfg *Config) PostgreSQLConnectionString() string {
 	sslMode := cfg.DatabaseSettings.SSLMode
 	if sslMode == "" {
-		sslMode = "require" // Default to require SSL for security
+		sslMode = "require"
 	}
-	
+
 	return fmt.Sprintf(
 		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		cfg.DatabaseSettings.User,

@@ -22,8 +22,6 @@ func CorsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// APIKeyMiddleware validates API key from X-API-Key header
-// Add this middleware to routes that need API key authentication
 func APIKeyMiddleware(validAPIKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

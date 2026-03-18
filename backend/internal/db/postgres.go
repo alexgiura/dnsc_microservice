@@ -6,12 +6,11 @@ import (
 	"log"
 	"time"
 
-	"dnsc_microservice/internal/config"
+	"cortex/internal/config"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 
-// NewPostgresPool creates and verifies a PostgreSQL connection pool using the provided config.
 func NewPostgresPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is nil")
@@ -27,7 +26,6 @@ func NewPostgresPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, er
 		return nil, fmt.Errorf("unable to parse database config: %w", err)
 	}
 
-	// Connection pool settings
 	poolConfig.MaxConns = 10
 	poolConfig.MinConns = 2
 	poolConfig.MaxConnLifetime = 30 * time.Minute
@@ -55,4 +53,3 @@ func NewPostgresPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, er
 
 	return nil, fmt.Errorf("unable to establish database connection after %d retries: %w", maxRetries, err)
 }
-

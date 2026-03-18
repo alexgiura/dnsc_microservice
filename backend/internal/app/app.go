@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"log"
 
-	"dnsc_microservice/internal/config"
-	"dnsc_microservice/internal/db"
-	"dnsc_microservice/internal/middleware"
-	"dnsc_microservice/internal/repository"
-	"dnsc_microservice/internal/routes"
-	"dnsc_microservice/internal/server"
-	"dnsc_microservice/internal/services"
+	"cortex/internal/config"
+	"cortex/internal/db"
+	"cortex/internal/middleware"
+	"cortex/internal/repository"
+	"cortex/internal/routes"
+	"cortex/internal/scheduler"
+	"cortex/internal/server"
+	"cortex/internal/services"
+	"cortex/internal/utils"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 )
@@ -19,9 +21,13 @@ import (
 type App struct {
 	server *server.Server
 	dbPool *pgxpool.Pool
+	logger *utils.Logger
+
+	articlePoller     *scheduler.ArticlePoller
+	articleSyncPoller *scheduler.ArticleSyncPoller
 }
 
-func NewApp(cfg *config.Config) (*App, error) {
+func NewApp(cfg *config.Config, logger *utils.Logger) (*App, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -33,9 +39,9 @@ func NewApp(cfg *config.Config) (*App, error) {
 
 	repo := repository.NewRepository(pool)
 
-	appServices := services.NewAppServices(repo)
+	appServices := services.NewAppServices(repo, logger, cfg)
 
-	router := routes.RegisterRoutes(appServices)
+	router := routes.RegisterRoutes()
 
 	handlerWithMiddleware := middleware.CorsMiddleware(router)
 
@@ -46,18 +52,34 @@ func NewApp(cfg *config.Config) (*App, error) {
 	}
 
 	return &App{
-		server: srv,
-		dbPool: pool,
+		server:            srv,
+		dbPool:            pool,
+		logger:            logger,
+		articlePoller:     appServices.ArticlePoller,
+		articleSyncPoller: appServices.ArticleSyncPoller,
 	}, nil
 }
 
 func (app *App) Run(ctx context.Context) error {
-	// _ = ctx
 	if app.server == nil {
 		return fmt.Errorf("server is nil")
 	}
 
-	log.Println("starting HTTP server")
+	// Start background article poller
+	if app.articlePoller != nil {
+		go app.articlePoller.Start(ctx)
+	}
+
+	// Start background article sync poller
+	if app.articleSyncPoller != nil {
+		go app.articleSyncPoller.Start(ctx)
+	}
+
+	if app.logger != nil {
+		app.logger.Info("APP", "/startup", 0, 0, "starting HTTP server")
+	} else {
+		log.Println("starting HTTP server")
+	}
 
 	if err := app.server.Start(); err != nil {
 		return fmt.Errorf("start server: %w", err)
@@ -71,25 +93,41 @@ func (app *App) Shutdown(ctx context.Context) error {
 		return fmt.Errorf("shutdown context is nil")
 	}
 
-	log.Println("shutting down application")
+	if app.logger != nil {
+		app.logger.Info("APP", "/shutdown", 0, 0, "shutting down application")
+	} else {
+		log.Println("shutting down application")
+	}
 
 	var shutdownErr error
 
 	if app.server != nil {
 		if err := app.server.Shutdown(ctx); err != nil {
-			log.Printf("error shutting down server: %v", err)
+			if app.logger != nil {
+				app.logger.Error("APP", "/shutdown", 0, 0, fmt.Sprintf("error shutting down server: %v", err))
+			} else {
+				log.Printf("error shutting down server: %v", err)
+			}
 			if shutdownErr == nil {
 				shutdownErr = fmt.Errorf("shutdown server: %w", err)
 			}
 		} else {
-			log.Println("server stopped successfully")
+			if app.logger != nil {
+				app.logger.Info("APP", "/shutdown", 0, 0, "server stopped successfully")
+			} else {
+				log.Println("server stopped successfully")
+			}
 		}
 	}
 
 	// Close PostgreSQL connection pool
 	if app.dbPool != nil {
 		app.dbPool.Close()
-		log.Println("postgres connection pool closed")
+		if app.logger != nil {
+			app.logger.Info("APP", "/shutdown", 0, 0, "postgres connection pool closed")
+		} else {
+			log.Println("postgres connection pool closed")
+		}
 	}
 
 	return shutdownErr

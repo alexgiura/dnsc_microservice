@@ -2,23 +2,29 @@ package main
 
 import (
 	"context"
-	"dnsc_microservice/internal/app"
-	"dnsc_microservice/internal/config"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"cortex/internal/app"
+	"cortex/internal/config"
+	"cortex/internal/utils"
 )
 
 func main() {
+	logger := utils.GetLogger("cortex-backend")
+
 	cfg, err := config.Load()
 	if err != nil {
+		logger.Error("APP", "/startup", 0, 0, "failed to load config: "+err.Error())
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	application, err := app.NewApp(cfg)
+	application, err := app.NewApp(cfg, logger)
 	if err != nil {
+		logger.Error("APP", "/startup", 0, 0, "failed to initialize app: "+err.Error())
 		log.Fatalf("failed to initialize app: %v", err)
 	}
 

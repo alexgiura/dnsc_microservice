@@ -1,9 +1,9 @@
 
 
 services:
-  dnsc-postgres:
+  cortex-postgres:
     image: postgres:16-alpine
-    container_name: dnsc-postgres
+    container_name: cortex-postgres
     restart: unless-stopped
     env_file: .env
     environment:
@@ -11,47 +11,40 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_DB_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB_NAME}
     volumes:
-      - dnsc_pgdata:/var/lib/postgresql/data
+      - cortex_pgdata:/var/lib/postgresql/data
       - ./db/init_scripts:/docker-entrypoint-initdb.d:ro
     ports:
       - "${POSTGRES_DB_PORT:-5432}:5432"
     networks:
-      - dnsc-net
+      - cortex-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_DB_USER} -d ${POSTGRES_DB_NAME}"]
       interval: 5s
       timeout: 5s
       retries: 5
       
-  dnsc-frontend:
-    container_name: dnsc-frontend
-    image: alexgiura/dnsc-frontend:prod
-    restart: unless-stopped
-    ports:
-    - "3000:3000"
-    networks:
-      - dnsc-net
+ 
 
 
-  dnsc-backend:
-    container_name: dnsc-backend
-    image: alexgiura/dnsc-backend:prod
+  cortex-backend:
+    container_name: cortex-backend
+    build: ./backend
     restart: unless-stopped
     env_file: .env
     environment:
-      POSTGRES_DB_HOST: dnsc-postgres
+      POSTGRES_DB_HOST: cortex-postgres
       POSTGRES_DB_PORT: 5432
     depends_on:
-      dnsc-postgres:
+      cortex-postgres:
         condition: service_healthy
     ports:
       - "${SERVER_PORT:-8080}:8080"
     networks:
-      - dnsc-net
+      - cortex-net
 
 volumes:
-  dnsc_pgdata:
+  cortex_pgdata:
 
 networks:
-  dnsc-net:
+  cortex-net:
     driver: bridge
