@@ -25,7 +25,7 @@ type DomainAutoWhitelistSettings struct {
 	Schedule string `env:"DOMAIN_AUTO_WHITELIST_SCHEDULE" envDefault:"0 0 2 * * *"` // seconds min hour dom mon dow
 	Timezone string `env:"DOMAIN_AUTO_WHITELIST_TIMEZONE" envDefault:"UTC"`
 	// Inactivity window used to compute cutoff from core.domain_records.date.
-	InactivityDays int `env:"DOMAIN_INACTIVITY_DAYS" envDefault:"180"`
+	InactivityDays int    `env:"DOMAIN_INACTIVITY_DAYS" envDefault:"180"`
 	ChangedBy      string `env:"DOMAIN_AUTO_WHITELIST_CHANGED_BY" envDefault:"system"`
 	Notes          string `env:"DOMAIN_AUTO_WHITELIST_NOTES" envDefault:"Auto-whitelisted by system."`
 }
