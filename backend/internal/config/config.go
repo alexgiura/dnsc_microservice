@@ -26,8 +26,6 @@ type DomainAutoWhitelistSettings struct {
 	Timezone string `env:"DOMAIN_AUTO_WHITELIST_TIMEZONE" envDefault:"UTC"`
 	// Inactivity window used to compute cutoff from core.domain_records.date.
 	InactivityDays int `env:"DOMAIN_INACTIVITY_DAYS" envDefault:"180"`
-	ChangedBy      string `env:"DOMAIN_AUTO_WHITELIST_CHANGED_BY" envDefault:"system"`
-	Notes          string `env:"DOMAIN_AUTO_WHITELIST_NOTES" envDefault:"Auto-whitelisted by system."`
 }
 
 // DatabaseSettings holds configuration related to the PostgreSQL database.
@@ -42,8 +40,8 @@ type DatabaseSettings struct {
 
 // Config holds configuration for the API and database.
 type Config struct {
-	AppSettings      AppSettings
-	DatabaseSettings DatabaseSettings
+	AppSettings                 AppSettings
+	DatabaseSettings            DatabaseSettings
 	DomainAutoWhitelistSettings DomainAutoWhitelistSettings
 }
 
@@ -53,7 +51,7 @@ func ConnectPostgreSQL(ctx context.Context, cfg *Config) (*pgxpool.Pool, error) 
 	defer cancel()
 
 	dbConnectString := cfg.PostgreSQLConnectionString()
-	
+
 	config, err := pgxpool.ParseConfig(dbConnectString)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse database config: %w", err)
@@ -97,12 +95,12 @@ func Load() (*Config, error) {
 	// Load environment variables from .env file in backend directory
 	// Get the current file path (this file: dnsc_microservice/internal/config/config.go)
 	_, currentFilePath, _, _ := runtime.Caller(0)
-	
-	// Navigate to backend directory: 
+
+	// Navigate to backend directory:
 	// dnsc_microservice/internal/config -> dnsc_microservice/internal -> dnsc_microservice -> backend
 	backendPath := filepath.Join(filepath.Dir(currentFilePath), "..", "..", "..")
 	envFilePath := filepath.Join(backendPath, ".env")
-	
+
 	// Load the .env file from backend directory
 	err := godotenv.Load(envFilePath)
 	if err != nil {
@@ -120,7 +118,7 @@ func Load() (*Config, error) {
 	if cfg.AppSettings.ServerPort == "" {
 		return nil, fmt.Errorf("invalid config: SERVER_PORT must not be empty")
 	}
-	
+
 	log.Printf("✅ Loaded config - ServerPort: %s, Environment: %s\n",
 		cfg.AppSettings.ServerPort, cfg.AppSettings.Environment)
 
@@ -133,7 +131,7 @@ func (cfg *Config) PostgreSQLConnectionString() string {
 	if sslMode == "" {
 		sslMode = "require" // Default to require SSL for security
 	}
-	
+
 	return fmt.Sprintf(
 		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		cfg.DatabaseSettings.User,
