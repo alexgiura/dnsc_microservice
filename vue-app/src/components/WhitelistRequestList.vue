@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MapPin, Phone, Clock, FileText, Mail } from 'lucide-vue-next'
+import { MapPin, Phone, CalendarDays, FileText, Mail } from 'lucide-vue-next'
 import type { WhitelistRequest } from '@/models/domain'
 
 const props = defineProps<{
@@ -28,8 +28,8 @@ function formatDateTime(v: string): string {
         <span class="text-xs font-semibold text-foreground">
           {{ req.last_name }} {{ req.first_name }}
         </span>
-        <span class="flex items-center gap-1 text-[10px] text-muted-foreground">
-          <Clock class="h-2.5 w-2.5" />
+        <span class="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+          <CalendarDays class="h-3 w-3" />
           {{ formatDateTime(req.created_at) }}
         </span>
       </div>
