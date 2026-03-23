@@ -60,7 +60,7 @@ func NewApp(cfg *config.Config) (*App, error) {
 	return &App{
 		server: srv,
 		dbPool: pool,
-		sched: autoScheduler,
+		sched:  autoScheduler,
 	}, nil
 }
 
