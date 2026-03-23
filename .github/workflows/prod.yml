@@ -62,6 +62,12 @@ jobs:
       - name: Copy env file to server
         run: scp -i ~/.ssh/id_rsa .env ubuntu@${{ secrets.DNSC_SERVER_IP }}:dnsc/.env
 
+      # Postgres montează ./db/init_scripts → doar SQL-urile de init (nu tot repo-ul db/).
+      - name: Copy DB init scripts to server
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "mkdir -p ~/dnsc/db/init_scripts"
+          scp -i ~/.ssh/id_rsa -r db/init_scripts/* ubuntu@${{ secrets.DNSC_SERVER_IP }}:dnsc/db/init_scripts/
+
       # COMPOSE_PROJECT_NAME stabil + volum cu nume fix în docker-compose.yml → același DB la fiecare deploy.
       - name: Deploy to Server
         run: ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "cd dnsc && export COMPOSE_PROJECT_NAME=dnsc && docker compose pull && docker compose up -d --remove-orphans"
