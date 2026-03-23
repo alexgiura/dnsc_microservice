@@ -33,6 +33,8 @@ jobs:
           docker build -t alexgiura/dnsc-frontend:prod -f vue-app/Dockerfile vue-app
           docker push alexgiura/dnsc-frontend:prod
 
+  # O singură dată pe server, dacă ai avut „Permission denied” la scp: sudo chown -R ubuntu:ubuntu ~/dnsc
+  # În pipeline nu folosim sudo (fără TTY/parolă în CI).
   deploy:
     runs-on: ubuntu-latest
     needs: [build-backend, build-frontend]
@@ -47,28 +49,50 @@ jobs:
           ssh-keyscan ${{ secrets.DNSC_SERVER_IP }} >> ~/.ssh/known_hosts
 
       - name: Debug SSH Connection
-        run: ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@${{ secrets.DNSC_SERVER_IP }} "echo SSH connection successful!"
-
-      - name: Create dnsc directory structure
-        run: ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "mkdir -p ~/dnsc/letsencrypt ~/dnsc/db/init_scripts"
-
-      # Doar imagini nefolosite — NU atinge volume-uri (datele Postgres rămân).
-      - name: Prune unused Docker images
-        run: ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "docker image prune -f"
-
-      - name: Copy docker compose file to server
-        run: scp -i ~/.ssh/id_rsa docker-compose.yml ubuntu@${{ secrets.DNSC_SERVER_IP }}:dnsc/docker-compose.yml
-
-      - name: Copy env file to server
-        run: scp -i ~/.ssh/id_rsa .env ubuntu@${{ secrets.DNSC_SERVER_IP }}:dnsc/.env
-
-      # Postgres montează ./db/init_scripts → doar SQL-urile de init.
-      # Dacă ~/dnsc/db a fost creat de root (ex. sudo), scp dă „Permission denied” → chown înainte.
-      - name: Copy DB init scripts to server
         run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "mkdir -p ~/dnsc/db/init_scripts && sudo chown -R ubuntu:ubuntu ~/dnsc/db && chmod -R u+rwX ~/dnsc/db"
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@${{ secrets.DNSC_SERVER_IP }} "echo SSH connection successful!"
+
+      - name: Create project directory structure
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "
+            mkdir -p ~/dnsc \
+                     ~/dnsc/letsencrypt \
+                     ~/dnsc/db/init_scripts
+          "
+
+      - name: Prune unused Docker images
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "docker image prune -f"
+
+      - name: Copy docker-compose file
+        run: |
+          scp -i ~/.ssh/id_rsa docker-compose.yml ubuntu@${{ secrets.DNSC_SERVER_IP }}:~/dnsc/docker-compose.yml
+
+      - name: Copy env file
+        run: |
+          scp -i ~/.ssh/id_rsa .env ubuntu@${{ secrets.DNSC_SERVER_IP }}:~/dnsc/.env
+
+      - name: Copy DB init scripts
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "
+            mkdir -p ~/dnsc/db/init_scripts &&
+            chmod -R u+rwX ~/dnsc/db
+          "
           scp -i ~/.ssh/id_rsa -r db/init_scripts/* ubuntu@${{ secrets.DNSC_SERVER_IP }}:~/dnsc/db/init_scripts/
 
-      # COMPOSE_PROJECT_NAME stabil + volum cu nume fix în docker-compose.yml → același DB la fiecare deploy.
-      - name: Deploy to Server
-        run: ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "cd dnsc && export COMPOSE_PROJECT_NAME=dnsc && docker compose pull && docker compose up -d --remove-orphans"
+      - name: Deploy to server
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "
+            cd ~/dnsc &&
+            export COMPOSE_PROJECT_NAME=dnsc &&
+            docker compose pull &&
+            docker compose up -d --remove-orphans
+          "
+
+      - name: Check running containers
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "
+            cd ~/dnsc &&
+            export COMPOSE_PROJECT_NAME=dnsc &&
+            docker compose ps
+          "
