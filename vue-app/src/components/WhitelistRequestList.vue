@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { User, MapPin, Phone, FileText, Mail, CalendarDays } from 'lucide-vue-next'
+import { MapPin, Phone, Clock, FileText, Mail } from 'lucide-vue-next'
 import type { WhitelistRequest } from '@/models/domain'
 
 const props = defineProps<{
@@ -21,20 +21,21 @@ function formatDateTime(v: string): string {
     <div
       v-for="req in props.requests"
       :key="req.id"
-      class="bg-card border border-border rounded-md p-3 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between gap-2"
+      class="bg-card border border-border rounded-md shadow-sm hover:shadow-md transition-shadow flex flex-col overflow-hidden"
     >
-      <div class="flex items-center justify-between">
-        <span class="flex items-center gap-1.5 text-xs font-medium text-foreground">
-          <User class="h-3.5 w-3.5 text-muted-foreground" />
+      <!-- Colored header -->
+      <div class="bg-muted/60 px-3 py-2.5 flex items-center justify-between border-b border-border">
+        <span class="text-xs font-semibold text-foreground">
           {{ req.last_name }} {{ req.first_name }}
         </span>
-        <span class="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-          <CalendarDays class="h-3 w-3" />
+        <span class="flex items-center gap-1 text-[10px] text-muted-foreground">
+          <Clock class="h-2.5 w-2.5" />
           {{ formatDateTime(req.created_at) }}
         </span>
       </div>
 
-      <div class="flex flex-col gap-2">
+      <!-- Body -->
+      <div class="p-3 flex flex-col gap-2">
         <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Mail class="h-3.5 w-3.5" />
           {{ req.email }}
@@ -49,8 +50,8 @@ function formatDateTime(v: string): string {
         </span>
       </div>
 
-      <div class="pt-2 border-t border-border">
-        <p class="text-xs text-foreground leading-snug flex items-start gap-1.5">
+      <div class="px-3 pb-3 pt-1 border-t border-border">
+        <p class="text-xs text-foreground leading-snug flex items-start gap-1.5 pt-2">
           <FileText class="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
           {{ req.reason }}
         </p>
@@ -58,4 +59,3 @@ function formatDateTime(v: string): string {
     </div>
   </div>
 </template>
-
