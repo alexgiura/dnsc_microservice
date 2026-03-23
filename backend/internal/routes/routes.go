@@ -16,9 +16,11 @@ func RegisterRoutes(appServices *services.AppServices) *mux.Router {
 	apiRouter := router.PathPrefix("/api").Subrouter()
 	apiRouter.HandleFunc("/domains", domainHandler.SaveDomain).Methods("POST")
 	apiRouter.HandleFunc("/domains", domainHandler.GetDomains).Methods("GET")
+	apiRouter.HandleFunc("/public/domains", domainHandler.GetPublicBlacklistedDomains).Methods("GET")
 	apiRouter.HandleFunc("/domains/{id}", domainHandler.GetDomainByID).Methods("GET")
 	apiRouter.HandleFunc("/domains/{id}", domainHandler.UpdateDomain).Methods("PATCH")
 	apiRouter.HandleFunc("/domains/{id}/whitelist", domainHandler.WhitelistDomain).Methods("POST")
+	apiRouter.HandleFunc("/domains/{id}/whitelist-requests", domainHandler.RequestWhitelist).Methods("POST")
 
 	return router
 }

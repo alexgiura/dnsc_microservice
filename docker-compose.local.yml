@@ -1,0 +1,56 @@
+services:
+  dnsc-postgres:
+    image: postgres:16-alpine
+    container_name: dnsc-postgres
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_DB_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_DB_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB_NAME}
+    volumes:
+      - dnsc_pgdata:/var/lib/postgresql/data
+      - ./db/init_scripts:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${POSTGRES_DB_PORT:-5432}:5432"
+    networks:
+      - dnsc-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_DB_USER} -d ${POSTGRES_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  dnsc-frontend:
+    container_name: dnsc-frontend
+    build:
+      context: ./vue-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    networks:
+      - dnsc-net
+
+  dnsc-backend:
+    container_name: dnsc-backend
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_DB_HOST: dnsc-postgres
+      POSTGRES_DB_PORT: 5432
+    depends_on:
+      dnsc-postgres:
+        condition: service_healthy
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    networks:
+      - dnsc-net
+
+volumes:
+  dnsc_pgdata:
+
+networks:
+  dnsc-net:
+    driver: bridge

@@ -5,6 +5,8 @@ import (
 	"dnsc_microservice/internal/models"
 	"dnsc_microservice/internal/repository"
 	"net"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -14,7 +16,10 @@ type DomainService interface {
 	SaveDomain(ctx context.Context, input models.SaveDomainInput) (*models.Domain, error)
 	GetDomainByID(ctx context.Context, id uuid.UUID) (*models.Domain, error)
 	GetDomains(ctx context.Context) ([]*models.Domain, error)
-	WhitelistDomain(ctx context.Context, id uuid.UUID) error
+	GetPublicBlacklistedDomains(ctx context.Context) ([]*models.PublicDomain, error)
+	ChangeDomainStatus(ctx context.Context, id uuid.UUID, whitelist bool, changedBy, notes string) error
+	RequestWhitelist(ctx context.Context, domainID uuid.UUID, input models.CreateWhitelistRequestInput) (*models.WhitelistRequest, error)
+	AutoWhitelistStaleDomains(ctx context.Context, cutoff time.Time, changedBy, notes string) error
 	UpdateDomain(ctx context.Context, id uuid.UUID, input models.UpdateDomainInput) (*models.Domain, error)
 }
 
@@ -102,9 +107,47 @@ func (s *domainService) GetDomains(ctx context.Context) ([]*models.Domain, error
 	return s.repo.List(ctx)
 }
 
-// WhitelistDomain sets whitelist = true for the domain
-func (s *domainService) WhitelistDomain(ctx context.Context, id uuid.UUID) error {
-	return s.repo.SetWhitelist(ctx, id, true)
+func (s *domainService) GetPublicBlacklistedDomains(ctx context.Context) ([]*models.PublicDomain, error) {
+	return s.repo.ListPublicBlacklisted(ctx)
+}
+
+// ChangeDomainStatus updates domain whitelist and stores a history entry.
+func (s *domainService) ChangeDomainStatus(ctx context.Context, id uuid.UUID, whitelist bool, changedBy, notes string) error {
+	return s.repo.SetWhitelistWithStatus(ctx, id, whitelist, changedBy, notes)
+}
+
+func (s *domainService) RequestWhitelist(ctx context.Context, domainID uuid.UUID, input models.CreateWhitelistRequestInput) (*models.WhitelistRequest, error) {
+	req := &models.WhitelistRequest{
+		ID:        uuid.New(),
+		DomainID:  domainID,
+		FirstName: strings.TrimSpace(input.FirstName),
+		LastName:  strings.TrimSpace(input.LastName),
+		Email:     strings.TrimSpace(input.Email),
+		Address:   strings.TrimSpace(input.Address),
+		Phone:     strings.TrimSpace(input.Phone),
+		Reason:    strings.TrimSpace(input.Reason),
+	}
+
+	return s.repo.CreateWhitelistRequest(ctx, req)
+}
+
+// AutoWhitelistStaleDomains sets whitelist=true for every domain whose latest
+// domain_record date is <= cutoff (or has no records at all), and inserts
+// a matching row into core.domain_status.
+func (s *domainService) AutoWhitelistStaleDomains(ctx context.Context, cutoff time.Time, changedBy, notes string) error {
+	ids, err := s.repo.FindAutoWhitelistCandidateDomainIDs(ctx, cutoff)
+	if err != nil {
+		return err
+	}
+
+	for _, id := range ids {
+		// whitelist=true to mark as trusted.
+		if err := s.repo.SetWhitelistWithStatus(ctx, id, true, changedBy, notes); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // UpdateDomain updates only Value and/or Whitelist

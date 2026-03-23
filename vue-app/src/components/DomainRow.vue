@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ChevronDown, ChevronRight, Globe, Server, MoreVertical, ShieldCheck, ShieldAlert } from 'lucide-vue-next'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import DropdownMenu from '@/components/ui/DropdownMenu.vue'
 import TicketList from '@/components/TicketList.vue'
+import StatusHistory from '@/components/StatusHistory.vue'
+import WhitelistRequestList from '@/components/WhitelistRequestList.vue'
 import type { Domain, DomainRecord } from '@/models/domain'
 
 const props = defineProps<{
@@ -15,9 +17,20 @@ const emit = defineEmits<{ setStatus: [id: string, status: 'trusted' | 'threat']
 
 const expanded = ref(false)
 const isTrusted = computed(() => props.domain.whitelist)
+const activeTab = ref<'tickets' | 'history' | 'whitelist'>('tickets')
+const historyCount = computed(() => props.domain.status_history?.length ?? 0)
+const whitelistCount = computed(() => props.domain.whitelist_requests?.length ?? 0)
+
+watch(expanded, (val) => {
+  if (val) activeTab.value = 'tickets'
+})
 
 function setStatus(status: 'trusted' | 'threat') {
   emit('setStatus', props.domain.id, status)
+}
+
+function statusLabel(status: 'trusted' | 'threat') {
+  return status === 'trusted' ? 'Whitelist' : 'Blacklist'
 }
 
 /** Map BE records to the ticket shape expected by TicketList */
@@ -60,7 +73,7 @@ function recordsAsTickets(records: DomainRecord[]) {
           :variant="isTrusted ? 'trusted' : 'threat'"
           class="justify-center text-[10px] uppercase"
         >
-          {{ isTrusted ? 'Trusted' : 'Threat' }}
+          {{ statusLabel(isTrusted ? 'trusted' : 'threat') }}
         </Badge>
       </span>
 
@@ -83,7 +96,7 @@ function recordsAsTickets(records: DomainRecord[]) {
               @click="setStatus('threat')"
             >
               <ShieldAlert class="h-3.5 w-3.5 mr-2 shrink-0 text-destructive" />
-              Marchează ca Threat
+              Marchează ca Blacklist
             </button>
             <button
               v-else
@@ -92,7 +105,7 @@ function recordsAsTickets(records: DomainRecord[]) {
               @click="setStatus('trusted')"
             >
               <ShieldCheck class="h-3.5 w-3.5 mr-2 shrink-0 text-success" />
-              Marchează ca Trusted
+              Marchează ca Whitelist
             </button>
           </template>
         </DropdownMenu>
@@ -100,7 +113,65 @@ function recordsAsTickets(records: DomainRecord[]) {
     </button>
 
     <div v-if="expanded" class="animate-slide-down bg-muted/30 border-t border-border">
-      <TicketList :tickets="recordsAsTickets(domain.records)" />
+      <div class="flex gap-2 px-4 py-3">
+        <button
+          type="button"
+          :class="[
+            'px-3 py-1.5 text-[11px] font-medium rounded-md transition-colors',
+            activeTab === 'tickets'
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-muted',
+          ]"
+          @click.stop="activeTab = 'tickets'"
+        >
+          Raportări
+          <span v-if="domain.records.length > 0" class="ml-1.5 text-xs opacity-70">
+            {{ domain.records.length }}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          :class="[
+            'px-3 py-1.5 text-[11px] font-medium rounded-md transition-colors',
+            activeTab === 'history'
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-muted',
+          ]"
+          @click.stop="activeTab = 'history'"
+        >
+          Istoric Status
+          <span v-if="historyCount > 0" class="ml-1.5 text-xs opacity-70">
+            {{ historyCount }}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          :class="[
+            'px-3 py-1.5 text-[11px] font-medium rounded-md transition-colors',
+            activeTab === 'whitelist'
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-muted',
+          ]"
+          @click.stop="activeTab = 'whitelist'"
+        >
+          Cereri Whitelistare
+          <span v-if="whitelistCount > 0" class="ml-1.5 text-xs opacity-70">
+            {{ whitelistCount }}
+          </span>
+        </button>
+      </div>
+
+      <div v-if="activeTab === 'tickets'">
+        <TicketList :tickets="recordsAsTickets(domain.records)" />
+      </div>
+      <div v-else-if="activeTab === 'history'">
+        <StatusHistory :history="domain.status_history ?? []" />
+      </div>
+      <div v-else>
+        <WhitelistRequestList :requests="domain.whitelist_requests ?? []" />
+      </div>
     </div>
   </div>
 </template>

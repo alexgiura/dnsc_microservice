@@ -10,6 +10,7 @@ import (
 	"dnsc_microservice/internal/middleware"
 	"dnsc_microservice/internal/repository"
 	"dnsc_microservice/internal/routes"
+	"dnsc_microservice/internal/scheduler"
 	"dnsc_microservice/internal/server"
 	"dnsc_microservice/internal/services"
 
@@ -19,6 +20,7 @@ import (
 type App struct {
 	server *server.Server
 	dbPool *pgxpool.Pool
+	sched  *scheduler.DomainAutoWhitelistScheduler
 }
 
 func NewApp(cfg *config.Config) (*App, error) {
@@ -35,6 +37,16 @@ func NewApp(cfg *config.Config) (*App, error) {
 
 	appServices := services.NewAppServices(repo)
 
+	autoScheduler := scheduler.NewDomainAutoWhitelistScheduler(
+		appServices.Domain,
+		cfg.DomainAutoWhitelistSettings.Enabled,
+		cfg.DomainAutoWhitelistSettings.Schedule,
+		cfg.DomainAutoWhitelistSettings.Timezone,
+		cfg.DomainAutoWhitelistSettings.InactivityDays,
+		cfg.DomainAutoWhitelistSettings.ChangedBy,
+		cfg.DomainAutoWhitelistSettings.Notes,
+	)
+
 	router := routes.RegisterRoutes(appServices)
 
 	handlerWithMiddleware := middleware.CorsMiddleware(router)
@@ -48,6 +60,7 @@ func NewApp(cfg *config.Config) (*App, error) {
 	return &App{
 		server: srv,
 		dbPool: pool,
+		sched: autoScheduler,
 	}, nil
 }
 
@@ -55,6 +68,12 @@ func (app *App) Run(ctx context.Context) error {
 	// _ = ctx
 	if app.server == nil {
 		return fmt.Errorf("server is nil")
+	}
+
+	if app.sched != nil {
+		if err := app.sched.Start(ctx); err != nil {
+			return fmt.Errorf("start auto-whitelist scheduler: %w", err)
+		}
 	}
 
 	log.Println("starting HTTP server")
@@ -84,6 +103,10 @@ func (app *App) Shutdown(ctx context.Context) error {
 		} else {
 			log.Println("server stopped successfully")
 		}
+	}
+
+	if app.sched != nil {
+		app.sched.Stop()
 	}
 
 	// Close PostgreSQL connection pool

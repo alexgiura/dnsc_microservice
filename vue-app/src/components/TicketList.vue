@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Info, ExternalLink } from 'lucide-vue-next'
+import { Info, ExternalLink, CalendarDays } from 'lucide-vue-next'
 import type { Ticket } from '@/data/mockData'
 
 const tagColors: Record<string, string> = {
@@ -15,6 +15,11 @@ const tagColors: Record<string, string> = {
 function getTagColor(tag: string): string {
   const upper = tag.toUpperCase()
   return tagColors[upper] || 'border-muted-foreground text-muted-foreground'
+}
+
+function formatDateTime(v: string): string {
+  const s = (v ?? '').replace('T', ' ')
+  return s.slice(0, 16)
 }
 
 defineProps<{
@@ -33,8 +38,9 @@ defineProps<{
         <span class="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-sm">
           {{ ticket.ticketId || '###' }}
         </span>
-        <span class="text-xs text-muted-foreground uppercase tracking-wide">
-          {{ ticket.date.slice(0, 10) }}
+        <span class="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+          <CalendarDays class="h-3 w-3" />
+          {{ formatDateTime(ticket.date) }}
         </span>
       </div>
 

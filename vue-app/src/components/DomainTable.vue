@@ -5,8 +5,9 @@ import Input from '@/components/ui/Input.vue'
 import Button from '@/components/ui/Button.vue'
 import DomainRow from '@/components/DomainRow.vue'
 import AddDomainDialog from '@/components/AddDomainDialog.vue'
+import StatusChangeDialog from '@/components/StatusChangeDialog.vue'
 import { domainsApi } from '@/api/domains'
-import type { Domain } from '@/models/domain'
+import type { Domain, ThreatStatus } from '@/models/domain'
 
 type FilterTab = 'all' | 'threat' | 'trusted'
 
@@ -16,6 +17,12 @@ const error = ref<string | null>(null)
 const search = ref('')
 const activeFilter = ref<FilterTab>('all')
 const dialogOpen = ref(false)
+const statusDialog = ref<null | {
+  domainId: string
+  domainValue: string
+  currentStatus: ThreatStatus
+  targetStatus: ThreatStatus
+}>(null)
 
 async function fetchDomains() {
   loading.value = true
@@ -56,15 +63,17 @@ async function addDomain(payload: { value: string; description: string; ticketId
   }
 }
 
-async function setStatus(id: string, status: 'trusted' | 'threat') {
-  const whitelist = status === 'trusted'
-  try {
-    await domainsApi.update(id, { whitelist })
-    domains.value = domains.value.map((d) =>
-      d.id === id ? { ...d, whitelist } : d
-    )
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Eroare la actualizare'
+function setStatus(id: string, status: ThreatStatus) {
+  const domain = domains.value.find((d) => d.id === id)
+  if (!domain) return
+
+  const currentStatus: ThreatStatus = domain.whitelist ? 'trusted' : 'threat'
+
+  statusDialog.value = {
+    domainId: id,
+    domainValue: domain.value,
+    currentStatus,
+    targetStatus: status,
   }
 }
 
@@ -84,8 +93,8 @@ const trustedCount = computed(() => domains.value.filter((d) => d.whitelist).len
 
 const tabs = computed(() => [
   { key: 'all' as const, label: 'Toate', count: domains.value.length },
-  { key: 'threat' as const, label: 'Threat', count: threatCount.value },
-  { key: 'trusted' as const, label: 'Trusted', count: trustedCount.value },
+  { key: 'threat' as const, label: 'Blacklist', count: threatCount.value },
+  { key: 'trusted' as const, label: 'Whitelist', count: trustedCount.value },
 ])
 </script>
 
@@ -166,6 +175,21 @@ const tabs = computed(() => [
       :open="dialogOpen"
       @update:open="dialogOpen = $event"
       @submit="addDomain"
+    />
+
+    <StatusChangeDialog
+      v-if="statusDialog"
+      :open="true"
+      :domain-value="statusDialog.domainValue"
+      :domain-id="statusDialog.domainId"
+      :current-status="statusDialog.currentStatus"
+      :target-status="statusDialog.targetStatus"
+      @update:open="
+        (val) => {
+          if (!val) statusDialog = null
+        }
+      "
+      @updated="fetchDomains"
     />
   </div>
 </template>

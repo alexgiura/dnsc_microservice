@@ -20,6 +20,16 @@ type AppSettings struct {
 	DebugMode   bool   `env:"DEBUG_MODE" envDefault:"false"`
 }
 
+type DomainAutoWhitelistSettings struct {
+	Enabled  bool   `env:"DOMAIN_AUTO_WHITELIST_ENABLED" envDefault:"false"`
+	Schedule string `env:"DOMAIN_AUTO_WHITELIST_SCHEDULE" envDefault:"0 0 2 * * *"` // seconds min hour dom mon dow
+	Timezone string `env:"DOMAIN_AUTO_WHITELIST_TIMEZONE" envDefault:"UTC"`
+	// Inactivity window used to compute cutoff from core.domain_records.date.
+	InactivityDays int `env:"DOMAIN_INACTIVITY_DAYS" envDefault:"180"`
+	ChangedBy      string `env:"DOMAIN_AUTO_WHITELIST_CHANGED_BY" envDefault:"system"`
+	Notes          string `env:"DOMAIN_AUTO_WHITELIST_NOTES" envDefault:"Auto-whitelisted by system."`
+}
+
 // DatabaseSettings holds configuration related to the PostgreSQL database.
 type DatabaseSettings struct {
 	User     string `env:"POSTGRES_DB_USER" envDefault:"postgres"`
@@ -34,6 +44,7 @@ type DatabaseSettings struct {
 type Config struct {
 	AppSettings      AppSettings
 	DatabaseSettings DatabaseSettings
+	DomainAutoWhitelistSettings DomainAutoWhitelistSettings
 }
 
 // ConnectPostgreSQL connects to PostgreSQL database and returns a connection pool

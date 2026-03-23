@@ -22,6 +22,14 @@ export interface UpdateDomainPayload {
   whitelist?: boolean
 }
 
+export interface WhitelistDomainPayload {
+  whitelist: boolean
+  changeBy: string
+  notes?: string
+  // domainId is optional; backend validates it if present.
+  domainId?: string
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const text = await res.text()
@@ -65,8 +73,17 @@ export const domainsApi = {
   },
 
   /** POST /api/domains/:id/whitelist */
-  async whitelist(id: string): Promise<void> {
-    const res = await fetch(`${base()}/${id}/whitelist`, { method: 'POST' })
+  async whitelist(id: string, payload: WhitelistDomainPayload): Promise<void> {
+    const res = await fetch(`${base()}/${id}/whitelist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        whitelist: payload.whitelist,
+        changeBy: payload.changeBy,
+        notes: payload.notes ?? undefined,
+        domainId: payload.domainId ?? undefined,
+      }),
+    })
     return handleResponse<void>(res)
   },
 }
