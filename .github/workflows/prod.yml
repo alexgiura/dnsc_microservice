@@ -52,7 +52,8 @@ jobs:
       - name: Create dnsc directory structure
         run: ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "mkdir -p ~/dnsc/letsencrypt"
 
-      - name: Clean up old Docker images and volumes
+      # Doar imagini nefolosite — NU atinge volume-uri (datele Postgres rămân).
+      - name: Prune unused Docker images
         run: ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "docker image prune -f"
 
       - name: Copy docker compose file to server
@@ -61,5 +62,6 @@ jobs:
       - name: Copy env file to server
         run: scp -i ~/.ssh/id_rsa .env ubuntu@${{ secrets.DNSC_SERVER_IP }}:dnsc/.env
 
+      # COMPOSE_PROJECT_NAME stabil + volum cu nume fix în docker-compose.yml → același DB la fiecare deploy.
       - name: Deploy to Server
-        run: ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "cd dnsc && docker compose pull && docker compose up -d --remove-orphans"
+        run: ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.DNSC_SERVER_IP }} "cd dnsc && export COMPOSE_PROJECT_NAME=dnsc && docker compose pull && docker compose up -d --remove-orphans"

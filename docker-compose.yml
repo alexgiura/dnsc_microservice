@@ -49,8 +49,11 @@ services:
     networks:
       - dnsc-net
 
+# Nume fix = același volum pe disk indiferent de folderul din care rulezi compose
+# (altfel proiectul Compose diferă → volum nou → DB „goală” + parolă din .env ca la prima inițializare).
 volumes:
   dnsc_pgdata:
+    name: dnsc_dnsc_pgdata
 
 networks:
   dnsc-net:
