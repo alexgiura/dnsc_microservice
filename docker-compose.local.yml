@@ -50,6 +50,7 @@ services:
 
 volumes:
   dnsc_pgdata:
+    name: dnsc_dnsc_pgdata
 
 networks:
   dnsc-net:

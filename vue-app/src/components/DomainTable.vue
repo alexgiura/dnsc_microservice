@@ -28,7 +28,17 @@ async function fetchDomains() {
   loading.value = true
   error.value = null
   try {
-    domains.value = await domainsApi.list()
+    const list = await domainsApi.list()
+    // Backend-ul poate răspunde `null` când nu există date.
+    const normalized = Array.isArray(list) ? list : []
+    // Backend poate trimite `records`/liste ca `null` când nu există date.
+    // Normalizăm ca să nu crape render-ul în DomainRow.
+    domains.value = normalized.map((d) => ({
+      ...d,
+      records: d.records ?? [],
+      status_history: d.status_history ?? [],
+      whitelist_requests: d.whitelist_requests ?? [],
+    }))
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Eroare la încărcare'
   } finally {

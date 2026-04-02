@@ -17,6 +17,7 @@ const emit = defineEmits<{ setStatus: [id: string, status: 'trusted' | 'threat']
 
 const expanded = ref(false)
 const isTrusted = computed(() => props.domain.whitelist)
+const recordsList = computed(() => props.domain.records ?? [])
 const activeTab = ref<'tickets' | 'history' | 'whitelist'>('tickets')
 const historyCount = computed(() => props.domain.status_history?.length ?? 0)
 const whitelistCount = computed(() => props.domain.whitelist_requests?.length ?? 0)
@@ -78,7 +79,7 @@ function recordsAsTickets(records: DomainRecord[]) {
       </span>
 
       <span class="text-xs text-muted-foreground text-center flex justify-center">
-        {{ domain.records.length }}
+        {{ recordsList.length }}
       </span>
 
       <span class="flex justify-center" @click.stop>
@@ -125,8 +126,8 @@ function recordsAsTickets(records: DomainRecord[]) {
           @click.stop="activeTab = 'tickets'"
         >
           Raportări
-          <span v-if="domain.records.length > 0" class="ml-1.5 text-xs opacity-70">
-            {{ domain.records.length }}
+          <span v-if="recordsList.length > 0" class="ml-1.5 text-xs opacity-70">
+            {{ recordsList.length }}
           </span>
         </button>
 
@@ -164,7 +165,7 @@ function recordsAsTickets(records: DomainRecord[]) {
       </div>
 
       <div v-if="activeTab === 'tickets'">
-        <TicketList :tickets="recordsAsTickets(domain.records)" />
+        <TicketList :tickets="recordsAsTickets(recordsList)" />
       </div>
       <div v-else-if="activeTab === 'history'">
         <StatusHistory :history="domain.status_history ?? []" />
