@@ -1,0 +1,84 @@
+package mappers
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"dnsc_microservice/internal/models"
+)
+
+const (
+	cfIOCDomains          = "IOC Domains"
+	cfPrimaryIncidentType = "Primary Incident Type"
+	cfRelatedIncidentType = "Related Incident Type"
+)
+
+// RTIRExtractedData is ticket CustomFields mapped to our domain/record fields (one row per IOC domain value).
+type RTIRExtractedData struct {
+	Domains     []string
+	Description string
+	Tags        []string
+	RecordTime  time.Time
+}
+
+// ExtractRTIRTicketData maps RTIR CustomFields into internal fields. Domains lists each IOC separately (deduped).
+func ExtractRTIRTicketData(t *models.RTIRTicketDetail) (RTIRExtractedData, error) {
+	var out RTIRExtractedData
+	if t == nil {
+		return out, fmt.Errorf("nil ticket")
+	}
+	out.RecordTime = time.Now().UTC()
+	if strings.TrimSpace(t.LastUpdated) != "" {
+		if parsed, e := time.Parse(time.RFC3339, strings.TrimSpace(t.LastUpdated)); e == nil {
+			out.RecordTime = parsed.UTC()
+		}
+	}
+
+	var ioc, primary, related []string
+	for _, cf := range t.CustomFields {
+		switch strings.TrimSpace(cf.Name) {
+		case cfIOCDomains:
+			ioc = append(ioc, cf.Values...)
+		case cfPrimaryIncidentType:
+			primary = append(primary, cf.Values...)
+		case cfRelatedIncidentType:
+			related = append(related, cf.Values...)
+		}
+	}
+
+	seen := make(map[string]struct{})
+	for _, s := range ioc {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out.Domains = append(out.Domains, s)
+	}
+	if len(out.Domains) == 0 {
+		return out, fmt.Errorf("empty IOC Domains")
+	}
+
+	if len(primary) > 0 {
+		parts := make([]string, 0, len(primary))
+		for _, s := range primary {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				parts = append(parts, s)
+			}
+		}
+		out.Description = strings.Join(parts, ", ")
+	}
+
+	for _, s := range related {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			out.Tags = append(out.Tags, s)
+		}
+	}
+	return out, nil
+}

@@ -48,6 +48,18 @@ services:
     networks:
       - dnsc-net
 
+  # --- Loguri containere (live) — https://dozzle.dev ---
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dnsc-dozzle
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "${DOZZLE_PORT:-3001}:8080"
+    networks:
+      - dnsc-net
+
 volumes:
   dnsc_pgdata:
     name: dnsc_dnsc_pgdata

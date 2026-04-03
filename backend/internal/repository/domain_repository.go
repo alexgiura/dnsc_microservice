@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"dnsc_microservice/internal/models"
 	"errors"
 	"fmt"
@@ -25,6 +26,9 @@ type DomainRepository interface {
 	GetByValueAndType(ctx context.Context, value, typ string) (*models.Domain, error)
 	InsertRecords(ctx context.Context, domainID uuid.UUID, records []models.DomainRecord) error
 	FindAutoWhitelistCandidateDomainIDs(ctx context.Context, cutoff time.Time) ([]uuid.UUID, error)
+
+	GetLastRTIRPlaySync(ctx context.Context) (*time.Time, error)
+	UpsertRTIRDomainRecord(ctx context.Context, rec models.DomainRTIRRecord) error
 }
 
 type domainRepository struct {
@@ -76,10 +80,14 @@ func (r *domainRepository) Insert(ctx context.Context, domain *models.Domain) er
 // insertRecordsTx inserts domain_records inside an existing transaction
 func (r *domainRepository) insertRecordsTx(ctx context.Context, tx pgx.Tx, domainID uuid.UUID, records []models.DomainRecord) error {
 	for _, rec := range records {
+		var syncAt interface{}
+		if rec.LastSuccessfulSyncAt != nil {
+			syncAt = *rec.LastSuccessfulSyncAt
+		}
 		_, err := tx.Exec(ctx, `
-			INSERT INTO core.domain_records (id, domain_id, ticket_id, description, tags, date, source)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
-		`, rec.ID, domainID, rec.TicketID, rec.Description, rec.Tags, rec.Date, rec.Source)
+			INSERT INTO core.domain_records (id, domain_id, ticket_id, description, tags, date, source, last_successful_sync_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, rec.ID, domainID, rec.TicketID, rec.Description, rec.Tags, rec.Date, rec.Source, syncAt)
 		if err != nil {
 			return fmt.Errorf("insert domain_record: %w", err)
 		}
@@ -134,7 +142,7 @@ func (r *domainRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.D
 
 func (r *domainRepository) getRecordsByDomainID(ctx context.Context, domainID uuid.UUID) ([]models.DomainRecord, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, domain_id, ticket_id, description, tags, date, source
+		SELECT id, domain_id, ticket_id, description, tags, date, source, last_successful_sync_at
 		FROM core.domain_records
 		WHERE domain_id = $1
 		ORDER BY date DESC
@@ -146,8 +154,13 @@ func (r *domainRepository) getRecordsByDomainID(ctx context.Context, domainID uu
 	var list []models.DomainRecord
 	for rows.Next() {
 		var rec models.DomainRecord
-		if err := rows.Scan(&rec.ID, &rec.DomainID, &rec.TicketID, &rec.Description, &rec.Tags, &rec.Date, &rec.Source); err != nil {
+		var syncAt sql.NullTime
+		if err := rows.Scan(&rec.ID, &rec.DomainID, &rec.TicketID, &rec.Description, &rec.Tags, &rec.Date, &rec.Source, &syncAt); err != nil {
 			return nil, fmt.Errorf("scan domain_record: %w", err)
+		}
+		if syncAt.Valid {
+			t := syncAt.Time
+			rec.LastSuccessfulSyncAt = &t
 		}
 		list = append(list, rec)
 	}
@@ -386,4 +399,102 @@ func (r *domainRepository) FindAutoWhitelistCandidateDomainIDs(ctx context.Conte
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+func (r *domainRepository) GetLastRTIRPlaySync(ctx context.Context) (*time.Time, error) {
+	row := r.db.QueryRow(ctx, `
+		SELECT MAX(last_successful_sync_at) FROM core.domain_records WHERE last_successful_sync_at IS NOT NULL
+	`)
+	var nt sql.NullTime
+	if err := row.Scan(&nt); err != nil {
+		return nil, fmt.Errorf("get last rtir play sync: %w", err)
+	}
+	if !nt.Valid {
+		return nil, nil
+	}
+	return &nt.Time, nil
+}
+
+func (r *domainRepository) UpsertRTIRDomainRecord(ctx context.Context, rec models.DomainRTIRRecord) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var recID, domID uuid.UUID
+	err = tx.QueryRow(ctx, `
+		SELECT dr.id, dr.domain_id
+		FROM core.domain_records dr
+		INNER JOIN core.domains d ON d.id = dr.domain_id
+		WHERE dr.ticket_id = $1 AND d.value = $2
+	`, rec.TicketID, rec.Value).Scan(&recID, &domID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("lookup domain_record by ticket: %w", err)
+	}
+
+	if err == nil {
+		_, err = tx.Exec(ctx, `
+			UPDATE core.domains SET value = $2, type = $3, whitelist = $4 WHERE id = $1
+		`, domID, rec.Value, rec.Type, rec.Whitelist)
+		if err != nil {
+			return fmt.Errorf("update domain from rtir: %w", err)
+		}
+		_, err = tx.Exec(ctx, `
+			UPDATE core.domain_records
+			SET description = $2, tags = $3, date = $4, source = $5, last_successful_sync_at = $6
+			WHERE id = $1
+		`, recID, rec.Description, rec.Tags, rec.RecordDate, "rtir", rec.LastSuccessfulSyncAt)
+		if err != nil {
+			return fmt.Errorf("update domain_record from rtir: %w", err)
+		}
+		return tx.Commit(ctx)
+	}
+
+	var domainID uuid.UUID
+	var isNewDomain bool
+	err = tx.QueryRow(ctx, `
+		SELECT id FROM core.domains WHERE value = $1 AND type = $2
+	`, rec.Value, rec.Type).Scan(&domainID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		isNewDomain = true
+		domainID = uuid.New()
+		_, err = tx.Exec(ctx, `
+			INSERT INTO core.domains (id, value, type, whitelist)
+			VALUES ($1, $2, $3, $4)
+		`, domainID, rec.Value, rec.Type, rec.Whitelist)
+		if err != nil {
+			return fmt.Errorf("insert domain from rtir: %w", err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("lookup domain by value: %w", err)
+	} else {
+		_, err = tx.Exec(ctx, `
+			UPDATE core.domains SET whitelist = $2 WHERE id = $1
+		`, domainID, rec.Whitelist)
+		if err != nil {
+			return fmt.Errorf("update domain whitelist from rtir: %w", err)
+		}
+	}
+
+	recordID := uuid.New()
+	_, err = tx.Exec(ctx, `
+		INSERT INTO core.domain_records (id, domain_id, ticket_id, description, tags, date, source, last_successful_sync_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, recordID, domainID, rec.TicketID, rec.Description, rec.Tags, rec.RecordDate, "rtir", rec.LastSuccessfulSyncAt)
+	if err != nil {
+		return fmt.Errorf("insert domain_record from rtir: %w", err)
+	}
+
+	if isNewDomain && !rec.Whitelist {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO core.domain_status (id, domain_id, whitelist, changed_by, notes)
+			VALUES ($1, $2, $3, $4, $5)
+		`, uuid.New(), domainID, false, "system", "first record")
+		if err != nil {
+			return fmt.Errorf("insert initial domain_status: %w", err)
+		}
+	}
+
+	return tx.Commit(ctx)
 }

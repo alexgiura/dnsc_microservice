@@ -30,6 +30,20 @@ type DomainAutoWhitelistSettings struct {
 	Notes          string `env:"DOMAIN_AUTO_WHITELIST_NOTES" envDefault:"Auto-whitelisted by system."`
 }
 
+// DomainRTIRPlaySyncSettings configures the periodic job that GETs an external
+// RTIR Play endpoint (same network, e.g. rtir-play.dnsc.ro) and imports domains.
+type DomainRTIRPlaySyncSettings struct {
+	Enabled  bool   `env:"DOMAIN_RTIR_PLAY_SYNC_ENABLED" envDefault:"false"`
+	URL      string `env:"DOMAIN_RTIR_PLAY_SYNC_URL" envDefault:""`
+	Schedule string `env:"DOMAIN_RTIR_PLAY_SYNC_SCHEDULE" envDefault:"0 0 3 * * *"` // seconds min hour dom mon dow
+	Timezone string `env:"DOMAIN_RTIR_PLAY_SYNC_TIMEZONE" envDefault:"UTC"`
+	Token string `env:"DOMAIN_RTIR_PLAY_SYNC_TOKEN" envDefault:""`
+	// Overlap subtracted from last_successful_sync_at when building the Updated > cutoff (default 5 minutes).
+	OverlapMinutes int `env:"DOMAIN_RTIR_PLAY_SYNC_OVERLAP_MINUTES" envDefault:"5"`
+	// Dev only: disable TLS verification for RTIR HTTPS (e.g. internal CA not in container).
+	SkipTLSVerify bool `env:"DOMAIN_RTIR_PLAY_SYNC_SKIP_TLS_VERIFY" envDefault:"false"`
+}
+
 // DatabaseSettings holds configuration related to the PostgreSQL database.
 type DatabaseSettings struct {
 	User     string `env:"POSTGRES_DB_USER" envDefault:"postgres"`
@@ -42,9 +56,10 @@ type DatabaseSettings struct {
 
 // Config holds configuration for the API and database.
 type Config struct {
-	AppSettings                 AppSettings
-	DatabaseSettings            DatabaseSettings
-	DomainAutoWhitelistSettings DomainAutoWhitelistSettings
+	AppSettings                   AppSettings
+	DatabaseSettings              DatabaseSettings
+	DomainAutoWhitelistSettings   DomainAutoWhitelistSettings
+	DomainRTIRPlaySyncSettings    DomainRTIRPlaySyncSettings
 }
 
 // ConnectPostgreSQL connects to PostgreSQL database and returns a connection pool

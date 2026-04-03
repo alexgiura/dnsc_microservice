@@ -2,8 +2,12 @@ package services
 
 import (
 	"context"
+	"dnsc_microservice/internal/clients/rtir"
+	"dnsc_microservice/internal/mappers"
 	"dnsc_microservice/internal/models"
 	"dnsc_microservice/internal/repository"
+	"fmt"
+	"log"
 	"net"
 	"strings"
 	"time"
@@ -21,15 +25,30 @@ type DomainService interface {
 	RequestWhitelist(ctx context.Context, domainID uuid.UUID, input models.CreateWhitelistRequestInput) (*models.WhitelistRequest, error)
 	AutoWhitelistStaleDomains(ctx context.Context, cutoff time.Time, changedBy, notes string) error
 	UpdateDomain(ctx context.Context, id uuid.UUID, input models.UpdateDomainInput) (*models.Domain, error)
+	// SyncRTIRPlayDomains searches RTIR tickets, loads each by ID, upserts domains + checkpoint.
+	SyncRTIRPlayDomains(ctx context.Context) error
 }
 
 type domainService struct {
 	repo repository.DomainRepository
+	rtir *rtir.Client
+
+	rtirTz      string
+	rtirOverlap time.Duration
 }
 
-// NewDomainService creates a new domain service
-func NewDomainService(repo repository.DomainRepository) DomainService {
-	return &domainService{repo: repo}
+// NewDomainService creates a new domain service. rtir may be nil only if RTIR sync is never used.
+func NewDomainService(repo repository.DomainRepository, rtirClient *rtir.Client, rtirSyncTimezone string, rtirOverlapMinutes int) DomainService {
+	overlap := time.Duration(rtirOverlapMinutes) * time.Minute
+	if rtirOverlapMinutes <= 0 {
+		overlap = 5 * time.Minute
+	}
+	return &domainService{
+		repo:        repo,
+		rtir:        rtirClient,
+		rtirTz:      rtirSyncTimezone,
+		rtirOverlap: overlap,
+	}
 }
 
 func domainTypeFromValue(value string) string {
@@ -167,4 +186,79 @@ func (s *domainService) UpdateDomain(ctx context.Context, id uuid.UUID, input mo
 		return nil, err
 	}
 	return current, nil
+}
+
+func (s *domainService) SyncRTIRPlayDomains(ctx context.Context) error {
+	if s.rtir == nil {
+		return fmt.Errorf("rtir client is nil")
+	}
+
+	syncStartedAt := time.Now().UTC()
+	cutoff, loc, err := s.rtirSyncCutoffAndLoc(ctx)
+	if err != nil {
+		return fmt.Errorf("rtir play sync: %w", err)
+	}
+
+	refs, err := s.rtir.SearchTickets(ctx, cutoff, loc)
+	if err != nil {
+		return fmt.Errorf("rtir play sync: %w", err)
+	}
+
+	var failed []string
+	for _, ref := range refs {
+		if err := s.syncOneRTIRTicket(ctx, ref.ID, syncStartedAt); err != nil {
+			log.Printf("[rtir-play-sync] ticket %s: %v", ref.ID, err)
+			failed = append(failed, ref.ID)
+		}
+	}
+
+	log.Printf("[rtir-play-sync] done: tickets=%d failed=%d cutoff=%s",
+		len(refs), len(failed), cutoff.Format(time.RFC3339))
+	if len(failed) > 0 {
+		return fmt.Errorf("rtir play sync: failed ticket ids: %v", failed)
+	}
+	return nil
+}
+
+func (s *domainService) rtirSyncCutoffAndLoc(ctx context.Context) (cutoff time.Time, loc *time.Location, err error) {
+	lastSync, err := s.repo.GetLastRTIRPlaySync(ctx)
+	if err != nil {
+		return time.Time{}, nil, err
+	}
+	loc, err = time.LoadLocation(strings.TrimSpace(s.rtirTz))
+	if err != nil || strings.TrimSpace(s.rtirTz) == "" {
+		loc = time.UTC
+	}
+	if lastSync != nil {
+		return lastSync.Add(-s.rtirOverlap), loc, nil
+	}
+	return time.Now().In(loc).Add(-24 * time.Hour), loc, nil
+}
+
+func (s *domainService) syncOneRTIRTicket(ctx context.Context, ticketID string, syncStartedAt time.Time) error {
+	ticket, err := s.rtir.GetTicketByID(ctx, ticketID)
+	if err != nil {
+		return err
+	}
+	data, err := mappers.ExtractRTIRTicketData(ticket)
+	if err != nil {
+		return err
+	}
+	for _, val := range data.Domains {
+		typ := domainTypeFromValue(val)
+		rec := models.DomainRTIRRecord{
+			TicketID:             ticketID,
+			Value:                val,
+			Type:                 typ,
+			Whitelist:            false,
+			Description:          data.Description,
+			Tags:                 data.Tags,
+			RecordDate:           data.RecordTime,
+			LastSuccessfulSyncAt: syncStartedAt,
+		}
+		if err := s.repo.UpsertRTIRDomainRecord(ctx, rec); err != nil {
+			return err
+		}
+	}
+	return nil
 }

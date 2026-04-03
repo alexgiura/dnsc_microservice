@@ -25,13 +25,14 @@ type Domain struct {
 
 // DomainRecord is one record linked to a domain: TicketId, Description, Tags, Date, Source.
 type DomainRecord struct {
-	ID          uuid.UUID `json:"id"`
-	DomainID    uuid.UUID `json:"domain_id"`
-	TicketID    string    `json:"ticket_id"`
-	Description string    `json:"description"`
-	Tags        []string  `json:"tags"`
-	Date        time.Time `json:"date"`
-	Source      string    `json:"source"`
+	ID                    uuid.UUID  `json:"id"`
+	DomainID              uuid.UUID  `json:"domain_id"`
+	TicketID              string     `json:"ticket_id"`
+	Description           string     `json:"description"`
+	Tags                  []string   `json:"tags"`
+	Date                  time.Time  `json:"date"`
+	Source                string     `json:"source"`
+	LastSuccessfulSyncAt  *time.Time `json:"last_successful_sync_at,omitempty"`
 }
 
 // DomainStatus is one record linked to a domain: each time a status changes.

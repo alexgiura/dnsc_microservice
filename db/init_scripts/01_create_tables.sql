@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS core.domains (
     whitelist BOOLEAN NOT NULL DEFAULT false
 );
 
+
 CREATE TABLE IF NOT EXISTS core.domain_records (
     id UUID PRIMARY KEY,
     domain_id UUID NOT NULL REFERENCES core.domains(id) ON DELETE CASCADE,
@@ -18,7 +19,8 @@ CREATE TABLE IF NOT EXISTS core.domain_records (
     description TEXT,
     tags TEXT[],
     date TIMESTAMPTZ NOT NULL,
-    source TEXT
+    source TEXT,
+    last_successful_sync_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_domains_value ON core.domains(value);

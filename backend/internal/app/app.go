@@ -10,6 +10,7 @@ import (
 	"dnsc_microservice/internal/middleware"
 	"dnsc_microservice/internal/repository"
 	"dnsc_microservice/internal/routes"
+	"dnsc_microservice/internal/clients/rtir"
 	"dnsc_microservice/internal/scheduler"
 	"dnsc_microservice/internal/server"
 	"dnsc_microservice/internal/services"
@@ -18,9 +19,10 @@ import (
 )
 
 type App struct {
-	server *server.Server
-	dbPool *pgxpool.Pool
-	sched  *scheduler.DomainAutoWhitelistScheduler
+	server        *server.Server
+	dbPool        *pgxpool.Pool
+	sched         *scheduler.DomainAutoWhitelistScheduler
+	rtirPlaySched *scheduler.DomainRTIRPlaySyncScheduler
 }
 
 func NewApp(cfg *config.Config) (*App, error) {
@@ -35,7 +37,18 @@ func NewApp(cfg *config.Config) (*App, error) {
 
 	repo := repository.NewRepository(pool)
 
-	appServices := services.NewAppServices(repo)
+	rtirClient := rtir.NewClient(rtir.Config{
+		BaseURL:       cfg.DomainRTIRPlaySyncSettings.URL,
+		Token:         cfg.DomainRTIRPlaySyncSettings.Token,
+		SkipTLSVerify: cfg.DomainRTIRPlaySyncSettings.SkipTLSVerify,
+	})
+
+	appServices := services.NewAppServices(
+		repo,
+		rtirClient,
+		cfg.DomainRTIRPlaySyncSettings.Timezone,
+		cfg.DomainRTIRPlaySyncSettings.OverlapMinutes,
+	)
 
 	autoScheduler := scheduler.NewDomainAutoWhitelistScheduler(
 		appServices.Domain,
@@ -45,6 +58,15 @@ func NewApp(cfg *config.Config) (*App, error) {
 		cfg.DomainAutoWhitelistSettings.InactivityDays,
 		cfg.DomainAutoWhitelistSettings.ChangedBy,
 		cfg.DomainAutoWhitelistSettings.Notes,
+	)
+
+	rtirPlayScheduler := scheduler.NewDomainRTIRPlaySyncScheduler(
+		appServices.Domain,
+		cfg.DomainRTIRPlaySyncSettings.Enabled,
+		cfg.DomainRTIRPlaySyncSettings.URL,
+		cfg.DomainRTIRPlaySyncSettings.Schedule,
+		cfg.DomainRTIRPlaySyncSettings.Timezone,
+		cfg.DomainRTIRPlaySyncSettings.Token,
 	)
 
 	router := routes.RegisterRoutes(appServices)
@@ -58,9 +80,10 @@ func NewApp(cfg *config.Config) (*App, error) {
 	}
 
 	return &App{
-		server: srv,
-		dbPool: pool,
-		sched:  autoScheduler,
+		server:        srv,
+		dbPool:        pool,
+		sched:         autoScheduler,
+		rtirPlaySched: rtirPlayScheduler,
 	}, nil
 }
 
@@ -73,6 +96,11 @@ func (app *App) Run(ctx context.Context) error {
 	if app.sched != nil {
 		if err := app.sched.Start(ctx); err != nil {
 			return fmt.Errorf("start auto-whitelist scheduler: %w", err)
+		}
+	}
+	if app.rtirPlaySched != nil {
+		if err := app.rtirPlaySched.Start(ctx); err != nil {
+			return fmt.Errorf("start RTIR Play sync scheduler: %w", err)
 		}
 	}
 
@@ -107,6 +135,9 @@ func (app *App) Shutdown(ctx context.Context) error {
 
 	if app.sched != nil {
 		app.sched.Stop()
+	}
+	if app.rtirPlaySched != nil {
+		app.rtirPlaySched.Stop()
 	}
 
 	// Close PostgreSQL connection pool

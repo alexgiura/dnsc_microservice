@@ -1,6 +1,7 @@
 package services
 
 import (
+	"dnsc_microservice/internal/clients/rtir"
 	"dnsc_microservice/internal/repository"
 )
 
@@ -10,8 +11,8 @@ type AppServices struct {
 }
 
 // NewAppServices initializes all services
-func NewAppServices(repos *repository.Repository) *AppServices {
+func NewAppServices(repos *repository.Repository, rtirClient *rtir.Client, rtirSyncTimezone string, rtirOverlapMinutes int) *AppServices {
 	return &AppServices{
-		Domain: NewDomainService(repos.Domain),
+		Domain: NewDomainService(repos.Domain, rtirClient, rtirSyncTimezone, rtirOverlapMinutes),
 	}
 }
