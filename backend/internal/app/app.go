@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
+	"dnsc_microservice/internal/clients/pnrisc"
+	"dnsc_microservice/internal/clients/rtir"
 	"dnsc_microservice/internal/config"
 	"dnsc_microservice/internal/db"
 	"dnsc_microservice/internal/middleware"
 	"dnsc_microservice/internal/repository"
 	"dnsc_microservice/internal/routes"
-	"dnsc_microservice/internal/clients/rtir"
 	"dnsc_microservice/internal/scheduler"
 	"dnsc_microservice/internal/server"
 	"dnsc_microservice/internal/services"
@@ -23,6 +25,7 @@ type App struct {
 	dbPool        *pgxpool.Pool
 	sched         *scheduler.DomainAutoWhitelistScheduler
 	rtirPlaySched *scheduler.DomainRTIRPlaySyncScheduler
+	pnriscSched   *scheduler.DomainPNRISCSyncScheduler
 }
 
 func NewApp(cfg *config.Config) (*App, error) {
@@ -43,9 +46,19 @@ func NewApp(cfg *config.Config) (*App, error) {
 		SkipTLSVerify: cfg.DomainRTIRPlaySyncSettings.SkipTLSVerify,
 	})
 
+	var pnriscClient *pnrisc.Client
+	if strings.TrimSpace(cfg.DomainPNRISCSyncSettings.URL) != "" {
+		pnriscClient = pnrisc.NewClient(pnrisc.Config{
+			BaseURL:       cfg.DomainPNRISCSyncSettings.URL,
+			Token:         cfg.DomainPNRISCSyncSettings.Token,
+			SkipTLSVerify: cfg.DomainPNRISCSyncSettings.SkipTLSVerify,
+		})
+	}
+
 	appServices := services.NewAppServices(
 		repo,
 		rtirClient,
+		pnriscClient,
 		cfg.DomainRTIRPlaySyncSettings.Timezone,
 		cfg.DomainRTIRPlaySyncSettings.OverlapMinutes,
 	)
@@ -69,6 +82,14 @@ func NewApp(cfg *config.Config) (*App, error) {
 		cfg.DomainRTIRPlaySyncSettings.Token,
 	)
 
+	pnriscScheduler := scheduler.NewDomainPNRISCSyncScheduler(
+		appServices.Domain,
+		cfg.DomainPNRISCSyncSettings.Enabled,
+		cfg.DomainPNRISCSyncSettings.URL,
+		cfg.DomainPNRISCSyncSettings.Schedule,
+		cfg.DomainPNRISCSyncSettings.Timezone,
+	)
+
 	router := routes.RegisterRoutes(appServices)
 
 	handlerWithMiddleware := middleware.CorsMiddleware(router)
@@ -84,6 +105,7 @@ func NewApp(cfg *config.Config) (*App, error) {
 		dbPool:        pool,
 		sched:         autoScheduler,
 		rtirPlaySched: rtirPlayScheduler,
+		pnriscSched:   pnriscScheduler,
 	}, nil
 }
 
@@ -101,6 +123,11 @@ func (app *App) Run(ctx context.Context) error {
 	if app.rtirPlaySched != nil {
 		if err := app.rtirPlaySched.Start(ctx); err != nil {
 			return fmt.Errorf("start RTIR Play sync scheduler: %w", err)
+		}
+	}
+	if app.pnriscSched != nil {
+		if err := app.pnriscSched.Start(ctx); err != nil {
+			return fmt.Errorf("start PNRISC sync scheduler: %w", err)
 		}
 	}
 
@@ -138,6 +165,9 @@ func (app *App) Shutdown(ctx context.Context) error {
 	}
 	if app.rtirPlaySched != nil {
 		app.rtirPlaySched.Stop()
+	}
+	if app.pnriscSched != nil {
+		app.pnriscSched.Stop()
 	}
 
 	// Close PostgreSQL connection pool

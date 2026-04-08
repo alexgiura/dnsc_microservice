@@ -250,3 +250,43 @@ func (h *DomainHandler) UpdateDomain(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error encoding updated domain response: %v", err)
 	}
 }
+
+// GetRTIRImportErrors handles GET /api/rtir/import-errors — list failed RTIR ticket sync rows.
+func (h *DomainHandler) GetRTIRImportErrors(w http.ResponseWriter, r *http.Request) {
+	list, err := h.domain.GetRTIRImportErrors(r.Context())
+	if err != nil {
+		statusCode, code, message := parseDatabaseError(err)
+		respondWithError(w, statusCode, code, message, err.Error())
+		return
+	}
+	if list == nil {
+		list = []models.RTIRImportError{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(list); err != nil {
+		log.Printf("Error encoding rtir import errors: %v", err)
+	}
+}
+
+// ReimportRTIRTicket handles POST /api/rtir/tickets/{ticketId}/reimport — refetch RTIR ticket and upsert domains.
+func (h *DomainHandler) ReimportRTIRTicket(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	ticketID := strings.TrimSpace(vars["ticketId"])
+	if ticketID == "" {
+		respondWithError(w, http.StatusBadRequest, ErrCodeValidationFailed, "ticketId is required", "")
+		return
+	}
+	err := h.domain.TryReimportRTIRTicket(r.Context(), ticketID)
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "rtir client is nil") {
+			respondWithError(w, http.StatusServiceUnavailable, ErrCodeInternalError, "RTIR client not configured", msg)
+			return
+		}
+		respondWithError(w, http.StatusBadRequest, ErrCodeValidationFailed, "reimport failed", msg)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"ticket_id": ticketID, "status": "ok"})
+}

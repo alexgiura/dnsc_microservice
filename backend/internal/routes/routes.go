@@ -21,6 +21,8 @@ func RegisterRoutes(appServices *services.AppServices) *mux.Router {
 	apiRouter.HandleFunc("/domains/{id}", domainHandler.UpdateDomain).Methods("PATCH")
 	apiRouter.HandleFunc("/domains/{id}/whitelist", domainHandler.WhitelistDomain).Methods("POST")
 	apiRouter.HandleFunc("/domains/{id}/whitelist-requests", domainHandler.RequestWhitelist).Methods("POST")
+	apiRouter.HandleFunc("/rtir/import-errors", domainHandler.GetRTIRImportErrors).Methods("GET")
+	apiRouter.HandleFunc("/rtir/tickets/{ticketId}/reimport", domainHandler.ReimportRTIRTicket).Methods("POST")
 
 	return router
 }

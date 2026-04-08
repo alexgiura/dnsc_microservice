@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"dnsc_microservice/internal/config"
 
+	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 
@@ -33,6 +35,20 @@ func NewPostgresPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, er
 	poolConfig.MaxConnLifetime = 30 * time.Minute
 	poolConfig.MaxConnIdleTime = 5 * time.Minute
 	poolConfig.HealthCheckPeriod = 1 * time.Minute
+
+	// Same IANA name as config.AppTimezone / TZ — session display matches server timezone and Go logs.
+	tz := strings.TrimSpace(cfg.AppSettings.AppTimezone)
+	if tz == "" {
+		tz = "Europe/Bucharest"
+	}
+	poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		q := fmt.Sprintf("SET TIME ZONE '%s'", strings.ReplaceAll(tz, "'", "''"))
+		_, err := conn.Exec(ctx, q)
+		if err != nil {
+			return fmt.Errorf("set session time zone %q: %w", tz, err)
+		}
+		return nil
+	}
 
 	const maxRetries = 3
 	const retryDelay = 1 * time.Second

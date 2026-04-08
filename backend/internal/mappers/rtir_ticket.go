@@ -22,18 +22,27 @@ type RTIRExtractedData struct {
 	RecordTime  time.Time
 }
 
+// RecordTimeFromRTIRTicket matches core.domain_records.date: RFC3339 LastUpdated, else UTC now.
+func RecordTimeFromRTIRTicket(t *models.RTIRTicketDetail) time.Time {
+	if t == nil {
+		return time.Now().UTC()
+	}
+	out := time.Now().UTC()
+	if strings.TrimSpace(t.LastUpdated) != "" {
+		if parsed, e := time.Parse(time.RFC3339, strings.TrimSpace(t.LastUpdated)); e == nil {
+			out = parsed.UTC()
+		}
+	}
+	return out
+}
+
 // ExtractRTIRTicketData maps RTIR CustomFields into internal fields. Domains lists each IOC separately (deduped).
 func ExtractRTIRTicketData(t *models.RTIRTicketDetail) (RTIRExtractedData, error) {
 	var out RTIRExtractedData
 	if t == nil {
 		return out, fmt.Errorf("nil ticket")
 	}
-	out.RecordTime = time.Now().UTC()
-	if strings.TrimSpace(t.LastUpdated) != "" {
-		if parsed, e := time.Parse(time.RFC3339, strings.TrimSpace(t.LastUpdated)); e == nil {
-			out.RecordTime = parsed.UTC()
-		}
-	}
+	out.RecordTime = RecordTimeFromRTIRTicket(t)
 
 	var ioc, primary, related []string
 	for _, cf := range t.CustomFields {
@@ -58,9 +67,6 @@ func ExtractRTIRTicketData(t *models.RTIRTicketDetail) (RTIRExtractedData, error
 		}
 		seen[s] = struct{}{}
 		out.Domains = append(out.Domains, s)
-	}
-	if len(out.Domains) == 0 {
-		return out, fmt.Errorf("empty IOC Domains")
 	}
 
 	if len(primary) > 0 {

@@ -13,12 +13,12 @@ import (
 
 // DomainRTIRPlaySyncScheduler periodically GETs RTIR /REST/2.0/tickets. URL, token, schedule, timezone come from config.
 type DomainRTIRPlaySyncScheduler struct {
-	domainSvc  services.DomainService
-	enabled    bool
-	url        string
-	schedule   string
-	timezone   string
-	token string
+	domainSvc services.DomainService
+	enabled   bool
+	url       string
+	schedule  string
+	timezone  string
+	token     string
 
 	cron *cron.Cron
 }
@@ -45,13 +45,13 @@ func NewDomainRTIRPlaySyncScheduler(
 	)
 
 	return &DomainRTIRPlaySyncScheduler{
-		domainSvc:  domainSvc,
-		enabled:    enabled,
-		url:        strings.TrimSpace(url),
-		schedule:   schedule,
-		timezone:   timezone,
-		token: strings.TrimSpace(token),
-		cron:  c,
+		domainSvc: domainSvc,
+		enabled:   enabled,
+		url:       strings.TrimSpace(url),
+		schedule:  schedule,
+		timezone:  timezone,
+		token:     strings.TrimSpace(token),
+		cron:      c,
 	}
 }
 

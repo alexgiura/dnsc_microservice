@@ -4,9 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
+
+	_ "time/tzdata" // embedded IANA DB so Europe/Bucharest works in minimal images (Alpine) without tzdata
 
 	"github.com/caarlos0/env/v11"
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -18,6 +22,8 @@ type AppSettings struct {
 	ServerPort  string `env:"SERVER_PORT" envDefault:"8080"`
 	Environment string `env:"ENVIRONMENT" envDefault:"development"`
 	DebugMode   bool   `env:"DEBUG_MODE" envDefault:"false"`
+	// AppTimezone is an IANA name for logs, DB session SET TIME ZONE, and UI. TZ env (e.g. Docker) overrides when set.
+	AppTimezone string `env:"APP_TIMEZONE" envDefault:"Europe/Bucharest"`
 }
 
 type DomainAutoWhitelistSettings struct {
@@ -37,11 +43,22 @@ type DomainRTIRPlaySyncSettings struct {
 	URL      string `env:"DOMAIN_RTIR_PLAY_SYNC_URL" envDefault:""`
 	Schedule string `env:"DOMAIN_RTIR_PLAY_SYNC_SCHEDULE" envDefault:"0 0 3 * * *"` // seconds min hour dom mon dow
 	Timezone string `env:"DOMAIN_RTIR_PLAY_SYNC_TIMEZONE" envDefault:"UTC"`
-	Token string `env:"DOMAIN_RTIR_PLAY_SYNC_TOKEN" envDefault:""`
+	Token    string `env:"DOMAIN_RTIR_PLAY_SYNC_TOKEN" envDefault:""`
 	// Overlap subtracted from last_successful_sync_at when building the Updated > cutoff (default 5 minutes).
 	OverlapMinutes int `env:"DOMAIN_RTIR_PLAY_SYNC_OVERLAP_MINUTES" envDefault:"5"`
 	// Dev only: disable TLS verification for RTIR HTTPS (e.g. internal CA not in container).
 	SkipTLSVerify bool `env:"DOMAIN_RTIR_PLAY_SYNC_SKIP_TLS_VERIFY" envDefault:"false"`
+}
+
+// DomainPNRISCSyncSettings configures the job that POSTs changed domains to PNRISC.
+type DomainPNRISCSyncSettings struct {
+	Enabled  bool   `env:"DOMAIN_PNRISC_SYNC_ENABLED" envDefault:"false"`
+	URL      string `env:"DOMAIN_PNRISC_SYNC_URL" envDefault:""`
+	Schedule string `env:"DOMAIN_PNRISC_SYNC_SCHEDULE" envDefault:"0 */5 * * * *"` // seconds min hour dom mon dow
+	Timezone string `env:"DOMAIN_PNRISC_SYNC_TIMEZONE" envDefault:"UTC"`
+	Token    string `env:"DOMAIN_PNRISC_SYNC_TOKEN" envDefault:""`
+	// Dev only: internal TLS (e.g. staging).
+	SkipTLSVerify bool `env:"DOMAIN_PNRISC_SYNC_SKIP_TLS_VERIFY" envDefault:"false"`
 }
 
 // DatabaseSettings holds configuration related to the PostgreSQL database.
@@ -56,10 +73,11 @@ type DatabaseSettings struct {
 
 // Config holds configuration for the API and database.
 type Config struct {
-	AppSettings                   AppSettings
-	DatabaseSettings              DatabaseSettings
-	DomainAutoWhitelistSettings   DomainAutoWhitelistSettings
-	DomainRTIRPlaySyncSettings    DomainRTIRPlaySyncSettings
+	AppSettings                 AppSettings
+	DatabaseSettings            DatabaseSettings
+	DomainAutoWhitelistSettings DomainAutoWhitelistSettings
+	DomainRTIRPlaySyncSettings  DomainRTIRPlaySyncSettings
+	DomainPNRISCSyncSettings    DomainPNRISCSyncSettings
 }
 
 // ConnectPostgreSQL connects to PostgreSQL database and returns a connection pool
@@ -109,21 +127,30 @@ func ConnectPostgreSQL(ctx context.Context, cfg *Config) (*pgxpool.Pool, error) 
 func Load() (*Config, error) {
 	cfg := &Config{}
 
-	// Load environment variables from .env file in backend directory
-	// Get the current file path (this file: dnsc_microservice/internal/config/config.go)
-	_, currentFilePath, _, _ := runtime.Caller(0)
+	// Resolve .env locations: internal/config -> two levels up = backend module root (e.g. /app in Docker);
+	// three levels up = monorepo root (skip if that resolves to filesystem root, e.g. /).
+	_, currentFilePath, _, ok := runtime.Caller(0)
+	if ok {
+		configDir := filepath.Dir(currentFilePath)
+		backendRoot := filepath.Clean(filepath.Join(configDir, "..", ".."))
+		repoRoot := filepath.Clean(filepath.Join(configDir, "..", "..", ".."))
 
-	// Navigate to backend directory:
-	// dnsc_microservice/internal/config -> dnsc_microservice/internal -> dnsc_microservice -> backend
-	backendPath := filepath.Join(filepath.Dir(currentFilePath), "..", "..", "..")
-	envFilePath := filepath.Join(backendPath, ".env")
+		tryDotEnv := func(path string) {
+			if _, statErr := os.Stat(path); statErr != nil {
+				return
+			}
+			if loadErr := godotenv.Load(path); loadErr == nil {
+				log.Printf("✅ Loaded .env file: %s\n", path)
+			}
+		}
 
-	// Load the .env file from backend directory
-	err := godotenv.Load(envFilePath)
-	if err != nil {
-		log.Printf("No .env file found at %s, using environment variables.\n", envFilePath)
+		// Monorepo root .env first (e.g. dnsc_microservice/.env), then backend/.env overrides.
+		if repoRoot != "/" && repoRoot != backendRoot {
+			tryDotEnv(filepath.Join(repoRoot, ".env"))
+		}
+		tryDotEnv(filepath.Join(backendRoot, ".env"))
 	} else {
-		log.Printf("✅ Loaded .env file from: %s\n", envFilePath)
+		_ = godotenv.Load(".env")
 	}
 
 	// Parse the configuration from environment variables
@@ -136,8 +163,23 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid config: SERVER_PORT must not be empty")
 	}
 
-	log.Printf("✅ Loaded config - ServerPort: %s, Environment: %s\n",
-		cfg.AppSettings.ServerPort, cfg.AppSettings.Environment)
+	// Single effective timezone: TZ (container/host) wins over APP_TIMEZONE so logs, process, and DB session match.
+	effectiveTZ := strings.TrimSpace(os.Getenv("TZ"))
+	if effectiveTZ == "" {
+		effectiveTZ = strings.TrimSpace(cfg.AppSettings.AppTimezone)
+	}
+	if effectiveTZ == "" {
+		effectiveTZ = "Europe/Bucharest"
+	}
+	cfg.AppSettings.AppTimezone = effectiveTZ
+	_ = os.Setenv("TZ", effectiveTZ)
+
+	if _, err := time.LoadLocation(cfg.AppSettings.AppTimezone); err != nil {
+		return nil, fmt.Errorf("invalid timezone %q (TZ / APP_TIMEZONE): %w", cfg.AppSettings.AppTimezone, err)
+	}
+
+	log.Printf("✅ Loaded config - ServerPort: %s, Environment: %s, Timezone: %s (TZ + DB session + logs)\n",
+		cfg.AppSettings.ServerPort, cfg.AppSettings.Environment, cfg.AppSettings.AppTimezone)
 
 	return cfg, nil
 }

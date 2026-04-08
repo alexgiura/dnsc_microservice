@@ -6,6 +6,8 @@ import (
 	"dnsc_microservice/internal/models"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,6 +31,15 @@ type DomainRepository interface {
 
 	GetLastRTIRPlaySync(ctx context.Context) (*time.Time, error)
 	UpsertRTIRDomainRecord(ctx context.Context, rec models.DomainRTIRRecord) error
+
+	ListDomainIDsForPNRISCSync(ctx context.Context, limit int) ([]uuid.UUID, error)
+	GetPNRISCSyncPayload(ctx context.Context, domainID uuid.UUID) (*models.PNRISCDomainPayload, error)
+	MarkPNRISCSyncSuccess(ctx context.Context, domainID uuid.UUID, remoteID *string, syncedAt time.Time) error
+	MarkPNRISCSyncFailure(ctx context.Context, domainID uuid.UUID, errMsg string) error
+
+	UpsertRTIRImportError(ctx context.Context, ticketID, source, errorMessage string, ticketDate time.Time) error
+	DeleteRTIRImportError(ctx context.Context, ticketID string) error
+	ListRTIRImportErrors(ctx context.Context) ([]models.RTIRImportError, error)
 }
 
 type domainRepository struct {
@@ -497,4 +508,176 @@ func (r *domainRepository) UpsertRTIRDomainRecord(ctx context.Context, rec model
 	}
 
 	return tx.Commit(ctx)
+}
+
+const pnriscErrStatusMax = 500
+
+func (r *domainRepository) ListDomainIDsForPNRISCSync(ctx context.Context, limit int) ([]uuid.UUID, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT id FROM core.domains
+		WHERE pnrisc_last_synced_at IS NULL OR last_updated > pnrisc_last_synced_at
+		ORDER BY last_updated ASC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list domains for pnrisc sync: %w", err)
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan domain id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (r *domainRepository) GetPNRISCSyncPayload(ctx context.Context, domainID uuid.UUID) (*models.PNRISCDomainPayload, error) {
+	row := r.db.QueryRow(ctx, `
+		SELECT value, type, whitelist FROM core.domains WHERE id = $1
+	`, domainID)
+	var p models.PNRISCDomainPayload
+	p.DomainID = domainID
+	if err := row.Scan(&p.Value, &p.Type, &p.Whitelist); err != nil {
+		return nil, fmt.Errorf("get domain for pnrisc: %w", err)
+	}
+
+	var dateAdded sql.NullTime
+	if err := r.db.QueryRow(ctx, `
+		SELECT MAX(changed_at) FROM core.domain_status
+		WHERE domain_id = $1 AND whitelist = false
+	`, domainID).Scan(&dateAdded); err != nil {
+		return nil, fmt.Errorf("pnrisc date_added: %w", err)
+	}
+	if dateAdded.Valid {
+		t := dateAdded.Time
+		p.DateAdded = &t
+	}
+
+	tagRows, err := r.db.Query(ctx, `
+		SELECT DISTINCT unnest(tags) AS tag
+		FROM core.domain_records
+		WHERE domain_id = $1 AND tags IS NOT NULL
+	`, domainID)
+	if err != nil {
+		return nil, fmt.Errorf("pnrisc tags: %w", err)
+	}
+	defer tagRows.Close()
+	var tags []string
+	for tagRows.Next() {
+		var tag sql.NullString
+		if err := tagRows.Scan(&tag); err != nil {
+			return nil, fmt.Errorf("scan tag: %w", err)
+		}
+		if tag.Valid && strings.TrimSpace(tag.String) != "" {
+			tags = append(tags, tag.String)
+		}
+	}
+	if err := tagRows.Err(); err != nil {
+		return nil, err
+	}
+	sort.Strings(tags)
+	p.ReasonTags = strings.Join(tags, ",")
+
+	return &p, nil
+}
+
+func (r *domainRepository) MarkPNRISCSyncSuccess(ctx context.Context, domainID uuid.UUID, remoteID *string, syncedAt time.Time) error {
+	var rid interface{}
+	if remoteID != nil && *remoteID != "" {
+		rid = *remoteID
+	}
+	_, err := r.db.Exec(ctx, `
+		UPDATE core.domains SET
+			pnrisc_last_synced_at = $2,
+			pnrisc_sync_status = $3,
+			pnrisc_remote_id = COALESCE($4, pnrisc_remote_id)
+		WHERE id = $1
+	`, domainID, syncedAt, "ok", rid)
+	if err != nil {
+		return fmt.Errorf("mark pnrisc sync success: %w", err)
+	}
+	return nil
+}
+
+func (r *domainRepository) MarkPNRISCSyncFailure(ctx context.Context, domainID uuid.UUID, errMsg string) error {
+	if len(errMsg) > pnriscErrStatusMax {
+		errMsg = errMsg[:pnriscErrStatusMax]
+	}
+	_, err := r.db.Exec(ctx, `
+		UPDATE core.domains SET pnrisc_sync_status = $2 WHERE id = $1
+	`, domainID, "error: "+errMsg)
+	if err != nil {
+		return fmt.Errorf("mark pnrisc sync failure: %w", err)
+	}
+	return nil
+}
+
+const rtirImportErrMsgMax = 8000
+
+func (r *domainRepository) UpsertRTIRImportError(ctx context.Context, ticketID, source, errorMessage string, ticketDate time.Time) error {
+	ticketID = strings.TrimSpace(ticketID)
+	if ticketID == "" {
+		return fmt.Errorf("ticket id is empty")
+	}
+	if len(errorMessage) > rtirImportErrMsgMax {
+		errorMessage = errorMessage[:rtirImportErrMsgMax]
+	}
+	if strings.TrimSpace(source) == "" {
+		source = "rtir-play-sync"
+	}
+	if ticketDate.IsZero() {
+		ticketDate = time.Now().UTC()
+	}
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO core.rtir_import_errors (id, ticket_id, source, error_message, date, last_sync_try_at)
+		VALUES ($1, $2, $3, $4, $5, now())
+		ON CONFLICT (ticket_id) DO UPDATE SET
+			source = EXCLUDED.source,
+			error_message = EXCLUDED.error_message,
+			date = EXCLUDED.date,
+			last_sync_try_at = now()
+	`, uuid.New(), ticketID, source, errorMessage, ticketDate)
+	if err != nil {
+		return fmt.Errorf("upsert rtir import error: %w", err)
+	}
+	return nil
+}
+
+func (r *domainRepository) DeleteRTIRImportError(ctx context.Context, ticketID string) error {
+	ticketID = strings.TrimSpace(ticketID)
+	if ticketID == "" {
+		return nil
+	}
+	_, err := r.db.Exec(ctx, `DELETE FROM core.rtir_import_errors WHERE ticket_id = $1`, ticketID)
+	if err != nil {
+		return fmt.Errorf("delete rtir import error: %w", err)
+	}
+	return nil
+}
+
+func (r *domainRepository) ListRTIRImportErrors(ctx context.Context) ([]models.RTIRImportError, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, ticket_id, source, error_message, "date", last_sync_try_at
+		FROM core.rtir_import_errors
+		ORDER BY last_sync_try_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list rtir import errors: %w", err)
+	}
+	defer rows.Close()
+	var list []models.RTIRImportError
+	for rows.Next() {
+		var e models.RTIRImportError
+		if err := rows.Scan(&e.ID, &e.TicketID, &e.Source, &e.ErrorMessage, &e.Date, &e.LastSyncTryAt); err != nil {
+			return nil, fmt.Errorf("scan rtir import error: %w", err)
+		}
+		list = append(list, e)
+	}
+	return list, rows.Err()
 }

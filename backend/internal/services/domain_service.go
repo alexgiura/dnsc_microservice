@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"dnsc_microservice/internal/clients/pnrisc"
 	"dnsc_microservice/internal/clients/rtir"
 	"dnsc_microservice/internal/mappers"
 	"dnsc_microservice/internal/models"
@@ -15,6 +16,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const rtirImportSource = "rtir-play-sync"
+
 // DomainService defines the interface for domain business logic
 type DomainService interface {
 	SaveDomain(ctx context.Context, input models.SaveDomainInput) (*models.Domain, error)
@@ -27,18 +30,25 @@ type DomainService interface {
 	UpdateDomain(ctx context.Context, id uuid.UUID, input models.UpdateDomainInput) (*models.Domain, error)
 	// SyncRTIRPlayDomains searches RTIR tickets, loads each by ID, upserts domains + checkpoint.
 	SyncRTIRPlayDomains(ctx context.Context) error
+	// SyncPNRISCDomains POSTs domains whose last_updated is newer than pnrisc_last_synced_at, then marks sync.
+	SyncPNRISCDomains(ctx context.Context) error
+	// TryReimportRTIRTicket GETs RTIR ticket by id and runs the same upsert path as the periodic sync.
+	TryReimportRTIRTicket(ctx context.Context, ticketID string) error
+	// GetRTIRImportErrors returns rows from core.rtir_import_errors (failed ticket syncs).
+	GetRTIRImportErrors(ctx context.Context) ([]models.RTIRImportError, error)
 }
 
 type domainService struct {
-	repo repository.DomainRepository
-	rtir *rtir.Client
+	repo   repository.DomainRepository
+	rtir   *rtir.Client
+	pnrisc *pnrisc.Client
 
 	rtirTz      string
 	rtirOverlap time.Duration
 }
 
-// NewDomainService creates a new domain service. rtir may be nil only if RTIR sync is never used.
-func NewDomainService(repo repository.DomainRepository, rtirClient *rtir.Client, rtirSyncTimezone string, rtirOverlapMinutes int) DomainService {
+// NewDomainService creates a new domain service. rtir may be nil only if RTIR sync is never used; pnrisc may be nil if PNRISC sync is disabled.
+func NewDomainService(repo repository.DomainRepository, rtirClient *rtir.Client, pnriscClient *pnrisc.Client, rtirSyncTimezone string, rtirOverlapMinutes int) DomainService {
 	overlap := time.Duration(rtirOverlapMinutes) * time.Minute
 	if rtirOverlapMinutes <= 0 {
 		overlap = 5 * time.Minute
@@ -46,6 +56,7 @@ func NewDomainService(repo repository.DomainRepository, rtirClient *rtir.Client,
 	return &domainService{
 		repo:        repo,
 		rtir:        rtirClient,
+		pnrisc:      pnriscClient,
 		rtirTz:      rtirSyncTimezone,
 		rtirOverlap: overlap,
 	}
@@ -238,11 +249,17 @@ func (s *domainService) rtirSyncCutoffAndLoc(ctx context.Context) (cutoff time.T
 func (s *domainService) syncOneRTIRTicket(ctx context.Context, ticketID string, syncStartedAt time.Time) error {
 	ticket, err := s.rtir.GetTicketByID(ctx, ticketID)
 	if err != nil {
+		_ = s.repo.UpsertRTIRImportError(ctx, ticketID, rtirImportSource, fmt.Sprintf("fetch_ticket: %v", err), time.Now().UTC())
 		return err
 	}
 	data, err := mappers.ExtractRTIRTicketData(ticket)
 	if err != nil {
+		_ = s.repo.UpsertRTIRImportError(ctx, ticketID, rtirImportSource, fmt.Sprintf("extract: %v", err), mappers.RecordTimeFromRTIRTicket(ticket))
 		return err
+	}
+	if len(data.Domains) == 0 {
+		_ = s.repo.UpsertRTIRImportError(ctx, ticketID, rtirImportSource, "missing_ioc_domains", data.RecordTime)
+		return fmt.Errorf("missing_ioc_domains")
 	}
 	for _, val := range data.Domains {
 		typ := domainTypeFromValue(val)
@@ -257,8 +274,87 @@ func (s *domainService) syncOneRTIRTicket(ctx context.Context, ticketID string, 
 			LastSuccessfulSyncAt: syncStartedAt,
 		}
 		if err := s.repo.UpsertRTIRDomainRecord(ctx, rec); err != nil {
+			_ = s.repo.UpsertRTIRImportError(ctx, ticketID, rtirImportSource, fmt.Sprintf("upsert: %v", err), data.RecordTime)
 			return err
 		}
+	}
+	// Clear any row left from a previous failed sync for this ticket (scheduler or manual retry).
+	if err := s.repo.DeleteRTIRImportError(ctx, ticketID); err != nil {
+		log.Printf("[rtir-play-sync] delete import error row ticket %s: %v", ticketID, err)
+	}
+	return nil
+}
+
+func (s *domainService) TryReimportRTIRTicket(ctx context.Context, ticketID string) error {
+	if s.rtir == nil {
+		return fmt.Errorf("rtir client is nil")
+	}
+	ticketID = strings.TrimSpace(ticketID)
+	if ticketID == "" {
+		return fmt.Errorf("empty ticket id")
+	}
+	return s.syncOneRTIRTicket(ctx, ticketID, time.Now().UTC())
+}
+
+func (s *domainService) GetRTIRImportErrors(ctx context.Context) ([]models.RTIRImportError, error) {
+	return s.repo.ListRTIRImportErrors(ctx)
+}
+
+func (s *domainService) SyncPNRISCDomains(ctx context.Context) error {
+	if s.pnrisc == nil {
+		return fmt.Errorf("pnrisc client is nil")
+	}
+	const batch = 500
+	ids, err := s.repo.ListDomainIDsForPNRISCSync(ctx, batch)
+	if err != nil {
+		return fmt.Errorf("pnrisc sync: %w", err)
+	}
+	if len(ids) == 0 {
+		log.Printf("[pnrisc-sync] nothing to sync")
+		return nil
+	}
+	log.Printf("[pnrisc-sync] syncing %d domain(s)", len(ids))
+	var failed []string
+	for _, id := range ids {
+		payload, err := s.repo.GetPNRISCSyncPayload(ctx, id)
+		if err != nil {
+			log.Printf("[pnrisc-sync] domain %s: payload: %v", id, err)
+			_ = s.repo.MarkPNRISCSyncFailure(ctx, id, err.Error())
+			failed = append(failed, id.String())
+			continue
+		}
+		var dateAdded *string
+		if payload.DateAdded != nil {
+			s := payload.DateAdded.Format("2006-01-02")
+			dateAdded = &s
+		}
+		body := pnrisc.UpsertBody{
+			Domain:      payload.Value,
+			Type:        payload.Type,
+			DateAdded:   dateAdded,
+			Blacklisted: !payload.Whitelist,
+			Reason:      payload.ReasonTags,
+		}
+		remoteID, err := s.pnrisc.UpsertDomain(ctx, body)
+		if err != nil {
+			log.Printf("[pnrisc-sync] domain %s: upsert: %v", id, err)
+			_ = s.repo.MarkPNRISCSyncFailure(ctx, id, err.Error())
+			failed = append(failed, id.String())
+			continue
+		}
+		rid := remoteID
+		var prid *string
+		if rid != "" {
+			prid = &rid
+		}
+		if err := s.repo.MarkPNRISCSyncSuccess(ctx, id, prid, time.Now().UTC()); err != nil {
+			log.Printf("[pnrisc-sync] domain %s: mark success: %v", id, err)
+			failed = append(failed, id.String())
+			continue
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("pnrisc sync: failed domain ids: %v", failed)
 	}
 	return nil
 }

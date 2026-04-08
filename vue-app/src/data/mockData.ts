@@ -1,3 +1,13 @@
+export interface FailedImport {
+  ticketId: string
+  source: string
+  errorMessage: string
+  /** Data ticket (afișare scurtă) */
+  date: string
+  /** Ultima încercare de sync */
+  lastSyncTry: string
+}
+
 export interface Ticket {
   ticketId: string
   description: string

@@ -3,13 +3,21 @@ import { User, Bell } from 'lucide-vue-next'
 import Button from '@/components/ui/Button.vue'
 import dnscLogo from '@/assets/dnsc-logo.svg'
 
+export type TopBarTab = 'dashboard' | 'domains' | 'import'
+
 const props = defineProps<{
-  activeTab: 'dashboard' | 'domains'
+  activeTab: TopBarTab
 }>()
 
-const emit = defineEmits<{ 'update:activeTab': ['dashboard' | 'domains'] }>()
+const emit = defineEmits<{ 'update:activeTab': [tab: TopBarTab] }>()
 
-const handleTabChange = (tab: 'dashboard' | 'domains') => {
+const tabs: { key: TopBarTab; label: string }[] = [
+  { key: 'dashboard', label: 'Dashboard' },
+  { key: 'domains', label: 'Domenii' },
+  { key: 'import', label: 'Import' },
+]
+
+const handleTabChange = (tab: TopBarTab) => {
   emit('update:activeTab', tab)
 }
 </script>
@@ -27,28 +35,18 @@ const handleTabChange = (tab: 'dashboard' | 'domains') => {
       class="flex items-center gap-1 bg-topbar-foreground/[0.06] rounded-full p-1 border border-topbar-foreground/[0.08]"
     >
       <button
+        v-for="tab in tabs"
+        :key="tab.key"
         type="button"
         class="px-6 py-2 text-[13px] font-medium rounded-full transition-all duration-200"
         :class="
-          props.activeTab === 'dashboard'
+          props.activeTab === tab.key
             ? 'bg-primary text-primary-foreground shadow-md'
             : 'text-topbar-foreground/60 hover:text-topbar-foreground/90 hover:bg-topbar-foreground/[0.06]'
         "
-        @click="handleTabChange('dashboard')"
+        @click="handleTabChange(tab.key)"
       >
-        Dashboard
-      </button>
-      <button
-        type="button"
-        class="px-6 py-2 text-[13px] font-medium rounded-full transition-all duration-200"
-        :class="
-          props.activeTab === 'domains'
-            ? 'bg-primary text-primary-foreground shadow-md'
-            : 'text-topbar-foreground/60 hover:text-topbar-foreground/90 hover:bg-topbar-foreground/[0.06]'
-        "
-        @click="handleTabChange('domains')"
-      >
-        Domenii
+        {{ tab.label }}
       </button>
     </nav>
 

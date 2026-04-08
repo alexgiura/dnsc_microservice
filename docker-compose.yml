@@ -10,6 +10,9 @@ services:
       POSTGRES_USER: ${POSTGRES_DB_USER}
       POSTGRES_PASSWORD: ${POSTGRES_DB_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB_NAME}
+      TZ: ${APP_TIMEZONE:-Europe/Bucharest}
+    # Server default timezone: timestamptz columns display like app logs (same IANA name as TZ / APP_TIMEZONE).
+    command: ["postgres", "-c", "timezone=${APP_TIMEZONE:-Europe/Bucharest}"]
     volumes:
       - dnsc_pgdata:/var/lib/postgresql/data
       - ./db/init_scripts:/docker-entrypoint-initdb.d:ro
@@ -27,6 +30,8 @@ services:
     container_name: dnsc-frontend
     image: alexgiura/dnsc-frontend:prod
     restart: unless-stopped
+    depends_on:
+      - dnsc-backend
     ports:
     - "3000:3000"
     networks:
@@ -41,6 +46,7 @@ services:
     environment:
       POSTGRES_DB_HOST: dnsc-postgres
       POSTGRES_DB_PORT: 5432
+      TZ: ${APP_TIMEZONE:-Europe/Bucharest}
     depends_on:
       dnsc-postgres:
         condition: service_healthy

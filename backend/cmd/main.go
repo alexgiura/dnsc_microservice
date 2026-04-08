@@ -16,6 +16,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
+	// TZ is set in config.Load() to match AppTimezone (same as PostgreSQL session in db.NewPostgresPool).
 
 	application, err := app.NewApp(cfg)
 	if err != nil {
