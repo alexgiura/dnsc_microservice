@@ -9,15 +9,19 @@ export interface DomainRecord {
   source: string
 }
 
-export type ThreatStatus = 'threat' | 'trusted'
+/** Aliniat cu BE: core.domains.status */
+export type DomainStatusValue = 'whitelist' | 'blacklist' | 'pending'
 
 export interface DomainStatus {
   id: string
   domain_id: string
-  whitelist: boolean
+  /** BE curent: whitelist | blacklist | pending */
+  status?: DomainStatusValue
   changed_at: string
   changed_by: string
   notes: string
+  /** Răspunsuri vechi BE (înainte de câmpul `status`) */
+  whitelist?: boolean
 }
 
 export interface WhitelistRequest {
@@ -36,7 +40,7 @@ export interface Domain {
   id: string
   value: string
   type: string
-  whitelist: boolean
+  status: DomainStatusValue
   records: DomainRecord[]
   status_history?: DomainStatus[]
   whitelist_requests?: WhitelistRequest[]

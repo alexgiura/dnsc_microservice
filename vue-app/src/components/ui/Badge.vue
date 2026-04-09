@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { cn } from '@/lib/utils'
 
-type Variant = 'default' | 'secondary' | 'destructive' | 'success' | 'outline' | 'tag' | 'trusted' | 'threat'
+type Variant = 'default' | 'secondary' | 'destructive' | 'success' | 'outline' | 'tag' | 'trusted' | 'threat' | 'pending'
 
 const props = withDefaults(
   defineProps<{
@@ -21,6 +21,7 @@ const variantClasses: Record<Variant, string> = {
   tag: 'border-border bg-muted text-muted-foreground font-normal',
   trusted: 'border-transparent bg-success text-success-foreground',
   threat: 'border-transparent bg-destructive text-destructive-foreground',
+  pending: 'border-transparent bg-muted text-muted-foreground',
 }
 
 const classes = computed(() =>

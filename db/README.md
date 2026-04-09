@@ -28,4 +28,4 @@ docker run --rm -v dnsc_dnsc_pgdata:/data -v $(pwd):/backup alpine tar czf /back
 
 ## Init scripts
 
-Fișierele `.sql` din `init_scripts/` sunt montate în `/docker-entrypoint-initdb.d/` și sunt rulate în ordine alfabetică la prima inițializare a bazei.
+Fișierele `.sql` din `init_scripts/` sunt montate în `/docker-entrypoint-initdb.d/` și sunt rulate în ordine alfabetică la prima inițializare a bazei. Schema completă este în **`01_create_tables.sql`** (CREATE); nu există migrări ALTER separate în repo — pentru o schemă nouă, folosește un volum Postgres gol sau resetează volumul.

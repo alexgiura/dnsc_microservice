@@ -20,7 +20,7 @@ export interface Domain {
   id: string
   value: string
   type: 'IP' | 'Domain'
-  status: 'whitelist' | 'blacklist'
+  status: 'whitelist' | 'blacklist' | 'pending'
   country?: string
   addedDate: string
   tickets: Ticket[]
@@ -139,6 +139,17 @@ export const mockDomains: Domain[] = [
     addedDate: '2026-03-07',
     tickets: [
       { ticketId: 'TK-1014', description: 'Server intern de monitorizare rețea', tags: ['internal', 'verified'], date: '2026-03-07', source: 'IT Department' },
+    ],
+  },
+  {
+    id: 'DOM-011',
+    value: 'pending-review.example',
+    type: 'Domain',
+    status: 'pending',
+    country: '—',
+    addedDate: '2026-04-01',
+    tickets: [
+      { ticketId: 'TK-2001', description: 'Import RTIR – încă neclasificat', tags: ['rtir'], date: '2026-04-01', source: 'RTIR' },
     ],
   },
 ]

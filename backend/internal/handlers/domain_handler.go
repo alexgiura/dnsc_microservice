@@ -107,7 +107,7 @@ func (h *DomainHandler) GetPublicBlacklistedDomains(w http.ResponseWriter, r *ht
 }
 
 // WhitelistDomain handles POST /api/domains/{id}/whitelist
-// It updates core.domains.whitelist and inserts a row into core.domain_status.
+// It updates core.domains.status and inserts a row into core.domain_status.
 func (h *DomainHandler) WhitelistDomain(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idStr, ok := vars["id"]
@@ -128,8 +128,13 @@ func (h *DomainHandler) WhitelistDomain(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if input.Whitelist == nil {
-		respondWithError(w, http.StatusBadRequest, ErrCodeValidationFailed, "whitelist is required", "")
+	if input.Status == nil {
+		respondWithError(w, http.StatusBadRequest, ErrCodeValidationFailed, "status is required", "")
+		return
+	}
+	st, err := models.ParseDomainStatus(*input.Status)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error(), "")
 		return
 	}
 	if input.ChangeBy == "" {
@@ -146,7 +151,7 @@ func (h *DomainHandler) WhitelistDomain(w http.ResponseWriter, r *http.Request) 
 		notes = *input.Notes
 	}
 
-	if err := h.domain.ChangeDomainStatus(r.Context(), id, *input.Whitelist, input.ChangeBy, notes); err != nil {
+	if err := h.domain.ChangeDomainStatus(r.Context(), id, st, input.ChangeBy, notes); err != nil {
 		statusCode, code, message := parseDatabaseError(err)
 		respondWithError(w, statusCode, code, message, err.Error())
 		return

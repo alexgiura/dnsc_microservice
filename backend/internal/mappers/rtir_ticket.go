@@ -79,6 +79,9 @@ func ExtractRTIRTicketData(t *models.RTIRTicketDetail) (RTIRExtractedData, error
 		}
 		out.Description = strings.Join(parts, ", ")
 	}
+	if strings.TrimSpace(out.Description) == "" {
+		out.Description = "Phishing"
+	}
 
 	for _, s := range related {
 		s = strings.TrimSpace(s)

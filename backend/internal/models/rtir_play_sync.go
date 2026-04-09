@@ -39,11 +39,11 @@ type RTIRTicketDetail struct {
 }
 
 // DomainRTIRRecord drives upsert into domains + domain_records (ticket_id = RTIR ticket).
+// New domains are created with status pending (see repository).
 type DomainRTIRRecord struct {
 	TicketID             string
 	Value                string
 	Type                 string
-	Whitelist            bool
 	Description          string
 	Tags                 []string
 	RecordDate           time.Time

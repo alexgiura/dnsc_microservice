@@ -7,16 +7,16 @@ import DropdownMenu from '@/components/ui/DropdownMenu.vue'
 import TicketList from '@/components/TicketList.vue'
 import StatusHistory from '@/components/StatusHistory.vue'
 import WhitelistRequestList from '@/components/WhitelistRequestList.vue'
-import type { Domain, DomainRecord } from '@/models/domain'
+import type { Domain, DomainRecord, DomainStatusValue } from '@/models/domain'
 
 const props = defineProps<{
   domain: Domain
 }>()
 
-const emit = defineEmits<{ setStatus: [id: string, status: 'trusted' | 'threat'] }>()
+const emit = defineEmits<{ setStatus: [id: string, status: DomainStatusValue] }>()
 
 const expanded = ref(false)
-const isTrusted = computed(() => props.domain.whitelist)
+const status = computed(() => props.domain.status)
 const recordsList = computed(() => props.domain.records ?? [])
 const activeTab = ref<'tickets' | 'history' | 'whitelist'>('tickets')
 const historyCount = computed(() => props.domain.status_history?.length ?? 0)
@@ -26,13 +26,29 @@ watch(expanded, (val) => {
   if (val) activeTab.value = 'tickets'
 })
 
-function setStatus(status: 'trusted' | 'threat') {
-  emit('setStatus', props.domain.id, status)
+function setStatus(next: DomainStatusValue) {
+  emit('setStatus', props.domain.id, next)
 }
 
-function statusLabel(status: 'trusted' | 'threat') {
-  return status === 'trusted' ? 'Whitelist' : 'Blacklist'
+function statusLabel(s: DomainStatusValue) {
+  if (s === 'whitelist') return 'Whitelist'
+  if (s === 'blacklist') return 'Blacklist'
+  return 'Pending'
 }
+
+function badgeVariant(s: DomainStatusValue): 'trusted' | 'threat' | 'pending' {
+  if (s === 'whitelist') return 'trusted'
+  if (s === 'blacklist') return 'threat'
+  return 'pending'
+}
+
+/** O singură acțiune: pending/whitelist → Blacklist; blacklist → Whitelist */
+const menuAction = computed(() => {
+  if (status.value === 'blacklist') {
+    return { next: 'whitelist' as const, label: 'Marchează ca Whitelist' }
+  }
+  return { next: 'blacklist' as const, label: 'Marchează ca Blacklist' }
+})
 
 /** Map BE records to the ticket shape expected by TicketList */
 function recordsAsTickets(records: DomainRecord[]) {
@@ -71,10 +87,10 @@ function recordsAsTickets(records: DomainRecord[]) {
 
       <span class="flex justify-center">
         <Badge
-          :variant="isTrusted ? 'trusted' : 'threat'"
+          :variant="badgeVariant(status)"
           class="justify-center text-[10px] uppercase"
         >
-          {{ statusLabel(isTrusted ? 'trusted' : 'threat') }}
+          {{ statusLabel(status) }}
         </Badge>
       </span>
 
@@ -91,22 +107,16 @@ function recordsAsTickets(records: DomainRecord[]) {
           </template>
           <template #content>
             <button
-              v-if="isTrusted"
-              type="button"
-              class="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground whitespace-nowrap"
-              @click="setStatus('threat')"
-            >
-              <ShieldAlert class="h-3.5 w-3.5 mr-2 shrink-0 text-destructive" />
-              Marchează ca Blacklist
-            </button>
-            <button
-              v-else
               type="button"
               class="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
-              @click="setStatus('trusted')"
+              @click="setStatus(menuAction.next)"
             >
-              <ShieldCheck class="h-3.5 w-3.5 mr-2 shrink-0 text-success" />
-              Marchează ca Whitelist
+              <ShieldCheck
+                v-if="menuAction.next === 'whitelist'"
+                class="h-3.5 w-3.5 mr-2 shrink-0 text-success"
+              />
+              <ShieldAlert v-else class="h-3.5 w-3.5 mr-2 shrink-0 text-destructive" />
+              {{ menuAction.label }}
             </button>
           </template>
         </DropdownMenu>

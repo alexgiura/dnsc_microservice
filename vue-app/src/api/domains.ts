@@ -1,5 +1,5 @@
 import { apiBaseUrl } from '@/config/api'
-import type { Domain, DomainRecord } from '@/models/domain'
+import type { Domain, DomainRecord, DomainStatusValue } from '@/models/domain'
 
 const base = () => `${apiBaseUrl}/api/domains`
 
@@ -7,7 +7,8 @@ export type { Domain, DomainRecord }
 
 export interface SaveDomainPayload {
   value: string
-  whitelist: boolean
+  /** whitelist | blacklist | pending; omit sau gol → pending pe server */
+  status?: DomainStatusValue
   records?: Array<{
     ticket_id: string | null
     description: string
@@ -19,14 +20,13 @@ export interface SaveDomainPayload {
 
 export interface UpdateDomainPayload {
   value?: string
-  whitelist?: boolean
+  status?: DomainStatusValue
 }
 
 export interface WhitelistDomainPayload {
-  whitelist: boolean
+  status: DomainStatusValue
   changeBy: string
   notes?: string
-  // domainId is optional; backend validates it if present.
   domainId?: string
 }
 
@@ -72,13 +72,13 @@ export const domainsApi = {
     return handleResponse<Domain>(res)
   },
 
-  /** POST /api/domains/:id/whitelist */
-  async whitelist(id: string, payload: WhitelistDomainPayload): Promise<void> {
+  /** POST /api/domains/:id/whitelist — body: { status, changeBy, notes } */
+  async setDomainStatus(id: string, payload: WhitelistDomainPayload): Promise<void> {
     const res = await fetch(`${base()}/${id}/whitelist`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        whitelist: payload.whitelist,
+        status: payload.status,
         changeBy: payload.changeBy,
         notes: payload.notes ?? undefined,
         domainId: payload.domainId ?? undefined,

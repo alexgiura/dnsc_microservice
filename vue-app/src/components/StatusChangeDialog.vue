@@ -1,19 +1,19 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import { ShieldAlert, ShieldCheck } from 'lucide-vue-next'
+import { ShieldAlert, ShieldCheck, CircleDot } from 'lucide-vue-next'
 import Dialog from '@/components/ui/Dialog.vue'
 import Button from '@/components/ui/Button.vue'
 import Textarea from '@/components/ui/Textarea.vue'
 import Badge from '@/components/ui/Badge.vue'
 import { domainsApi } from '@/api/domains'
-import type { ThreatStatus } from '@/models/domain'
+import type { DomainStatusValue } from '@/models/domain'
 
 const props = defineProps<{
   open: boolean
   domainId: string
   domainValue: string
-  currentStatus: ThreatStatus
-  targetStatus: ThreatStatus
+  currentStatus: DomainStatusValue
+  targetStatus: DomainStatusValue
 }>()
 
 const emit = defineEmits<{
@@ -32,20 +32,25 @@ watch(
   }
 )
 
-const isThreatTarget = computed(() => props.targetStatus === 'threat')
-const targetBadgeVariant = computed(() => (isThreatTarget.value ? 'threat' : 'trusted'))
-
-const currentBadgeVariant = computed(() => (props.currentStatus === 'threat' ? 'threat' : 'trusted'))
-
-function statusLabel(status: ThreatStatus) {
-  return status === 'trusted' ? 'Whitelist' : 'Blacklist'
+function statusLabel(s: DomainStatusValue) {
+  if (s === 'whitelist') return 'Whitelist'
+  if (s === 'blacklist') return 'Blacklist'
+  return 'Pending'
 }
 
+function badgeVariant(s: DomainStatusValue): 'trusted' | 'threat' | 'pending' {
+  if (s === 'whitelist') return 'trusted'
+  if (s === 'blacklist') return 'threat'
+  return 'pending'
+}
+
+const targetBadgeVariant = computed(() => badgeVariant(props.targetStatus))
+const currentBadgeVariant = computed(() => badgeVariant(props.currentStatus))
+
 const confirmButtonClasses = computed(() => {
-  // Vue project nu are clase bg-trusted/bg-threat, așa că mapăm pe succes/dezasttrus
-  return props.targetStatus === 'trusted'
-    ? 'bg-success hover:bg-success/90 text-white'
-    : 'bg-destructive hover:bg-destructive/90 text-white'
+  if (props.targetStatus === 'whitelist') return 'bg-success hover:bg-success/90 text-white'
+  if (props.targetStatus === 'blacklist') return 'bg-destructive hover:bg-destructive/90 text-white'
+  return 'bg-secondary hover:bg-secondary/80 text-secondary-foreground'
 })
 
 function handleClose(nextOpen: boolean) {
@@ -60,9 +65,8 @@ async function handleConfirm() {
   error.value = null
   loading.value = true
   try {
-    const whitelist = props.targetStatus === 'trusted'
-    await domainsApi.whitelist(props.domainId, {
-      whitelist,
+    await domainsApi.setDomainStatus(props.domainId, {
+      status: props.targetStatus,
       changeBy: 'user@example.com',
       notes: trimmed,
     })
@@ -85,7 +89,7 @@ async function handleConfirm() {
         <p class="text-xs text-muted-foreground">Adaugă un motiv pentru schimbarea statusului.</p>
       </div>
 
-      <div class="flex items-center gap-2 text-sm">
+      <div class="flex items-center gap-2 text-sm flex-wrap">
         <span class="font-mono text-xs text-muted-foreground">{{ domainValue }}</span>
         <span class="text-muted-foreground">:</span>
         <Badge :variant="currentBadgeVariant" class="text-[10px] uppercase">
@@ -118,12 +122,12 @@ async function handleConfirm() {
           @click="handleConfirm"
           :class="confirmButtonClasses"
         >
-          <ShieldCheck v-if="targetStatus === 'trusted'" class="h-4 w-4" />
-          <ShieldAlert v-else class="h-4 w-4" />
-          {{ targetStatus === 'trusted' ? 'Marchează ca Whitelist' : 'Marchează ca Blacklist' }}
+          <ShieldCheck v-if="targetStatus === 'whitelist'" class="h-4 w-4" />
+          <ShieldAlert v-else-if="targetStatus === 'blacklist'" class="h-4 w-4" />
+          <CircleDot v-else class="h-4 w-4" />
+          Marchează ca {{ statusLabel(targetStatus) }}
         </Button>
       </div>
     </div>
   </Dialog>
 </template>
-

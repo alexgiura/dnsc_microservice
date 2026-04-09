@@ -6,7 +6,6 @@ import (
 	"dnsc_microservice/internal/models"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -21,8 +20,7 @@ type DomainRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Domain, error)
 	List(ctx context.Context) ([]*models.Domain, error)
 	ListPublicBlacklisted(ctx context.Context) ([]*models.PublicDomain, error)
-	SetWhitelist(ctx context.Context, id uuid.UUID, whitelist bool) error
-	SetWhitelistWithStatus(ctx context.Context, id uuid.UUID, whitelist bool, changedBy, notes string) error
+	SetDomainStatusWithHistory(ctx context.Context, id uuid.UUID, status string, changedBy, notes string) error
 	CreateWhitelistRequest(ctx context.Context, request *models.WhitelistRequest) (*models.WhitelistRequest, error)
 	Update(ctx context.Context, domain *models.Domain) error
 	GetByValueAndType(ctx context.Context, value, typ string) (*models.Domain, error)
@@ -60,9 +58,9 @@ func (r *domainRepository) Insert(ctx context.Context, domain *models.Domain) er
 	defer tx.Rollback(ctx)
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO core.domains (id, value, type, whitelist)
+		INSERT INTO core.domains (id, value, type, status)
 		VALUES ($1, $2, $3, $4)
-	`, domain.ID, domain.Value, domain.Type, domain.Whitelist)
+	`, domain.ID, domain.Value, domain.Type, domain.Status)
 	if err != nil {
 		return fmt.Errorf("insert domain: %w", err)
 	}
@@ -74,12 +72,11 @@ func (r *domainRepository) Insert(ctx context.Context, domain *models.Domain) er
 	}
 
 	// Initial status history for newly created blacklisted domains.
-	// This runs inside the same transaction so all inserts roll back together on failure.
-	if !domain.Whitelist {
+	if domain.Status == models.DomainStatusBlacklist {
 		_, err = tx.Exec(ctx, `
-			INSERT INTO core.domain_status (id, domain_id, whitelist, changed_by, notes)
+			INSERT INTO core.domain_status (id, domain_id, status, changed_by, notes)
 			VALUES ($1, $2, $3, $4, $5)
-		`, uuid.New(), domain.ID, false, "system", "first record")
+		`, uuid.New(), domain.ID, models.DomainStatusBlacklist, "system", "first record")
 		if err != nil {
 			return fmt.Errorf("insert initial domain_status: %w", err)
 		}
@@ -125,10 +122,10 @@ func (r *domainRepository) InsertRecords(ctx context.Context, domainID uuid.UUID
 // GetByID retrieves a domain by ID and loads its records
 func (r *domainRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Domain, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT id, value, type, whitelist FROM core.domains WHERE id = $1
+		SELECT id, value, type, status FROM core.domains WHERE id = $1
 	`, id)
 	var d models.Domain
-	if err := row.Scan(&d.ID, &d.Value, &d.Type, &d.Whitelist); err != nil {
+	if err := row.Scan(&d.ID, &d.Value, &d.Type, &d.Status); err != nil {
 		return nil, fmt.Errorf("get domain by id: %w", err)
 	}
 	records, err := r.getRecordsByDomainID(ctx, id)
@@ -180,7 +177,7 @@ func (r *domainRepository) getRecordsByDomainID(ctx context.Context, domainID uu
 
 func (r *domainRepository) getStatusHistoryByDomainID(ctx context.Context, domainID uuid.UUID) ([]models.DomainStatus, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, domain_id, whitelist, changed_at, changed_by, notes
+		SELECT id, domain_id, status, changed_at, changed_by, notes
 		FROM core.domain_status
 		WHERE domain_id = $1
 		ORDER BY changed_at DESC
@@ -193,7 +190,7 @@ func (r *domainRepository) getStatusHistoryByDomainID(ctx context.Context, domai
 	var history []models.DomainStatus
 	for rows.Next() {
 		var entry models.DomainStatus
-		if err := rows.Scan(&entry.ID, &entry.DomainID, &entry.Whitelist, &entry.ChangedAt, &entry.ChangedBy, &entry.Notes); err != nil {
+		if err := rows.Scan(&entry.ID, &entry.DomainID, &entry.Status, &entry.ChangedAt, &entry.ChangedBy, &entry.Notes); err != nil {
 			return nil, fmt.Errorf("scan domain_status: %w", err)
 		}
 		history = append(history, entry)
@@ -227,7 +224,7 @@ func (r *domainRepository) getWhitelistRequestsByDomainID(ctx context.Context, d
 // List retrieves all domains with their records
 func (r *domainRepository) List(ctx context.Context) ([]*models.Domain, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, value, type, whitelist FROM core.domains ORDER BY value
+		SELECT id, value, type, status FROM core.domains ORDER BY value
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("list domains: %w", err)
@@ -236,7 +233,7 @@ func (r *domainRepository) List(ctx context.Context) ([]*models.Domain, error) {
 	var domains []*models.Domain
 	for rows.Next() {
 		var d models.Domain
-		if err := rows.Scan(&d.ID, &d.Value, &d.Type, &d.Whitelist); err != nil {
+		if err := rows.Scan(&d.ID, &d.Value, &d.Type, &d.Status); err != nil {
 			return nil, fmt.Errorf("scan domain: %w", err)
 		}
 		records, err := r.getRecordsByDomainID(ctx, d.ID)
@@ -266,12 +263,12 @@ func (r *domainRepository) ListPublicBlacklisted(ctx context.Context) ([]*models
 		SELECT
 			d.value,
 			d.type,
-			MAX(ds.changed_at) FILTER (WHERE ds.whitelist = false) AS last_blacklisted_at
+			MAX(ds.changed_at) FILTER (WHERE ds.status = 'blacklist') AS last_blacklisted_at
 		FROM core.domains d
 		LEFT JOIN core.domain_status ds ON ds.domain_id = d.id
-		WHERE d.whitelist = false
+		WHERE d.status = 'blacklist'
 		GROUP BY d.id, d.value, d.type
-		HAVING MAX(ds.changed_at) FILTER (WHERE ds.whitelist = false) IS NOT NULL
+		HAVING MAX(ds.changed_at) FILTER (WHERE ds.status = 'blacklist') IS NOT NULL
 		ORDER BY last_blacklisted_at DESC
 	`)
 	if err != nil {
@@ -290,32 +287,26 @@ func (r *domainRepository) ListPublicBlacklisted(ctx context.Context) ([]*models
 	return list, rows.Err()
 }
 
-// SetWhitelist updates the whitelist flag for a domain
-func (r *domainRepository) SetWhitelist(ctx context.Context, id uuid.UUID, whitelist bool) error {
-	_, err := r.db.Exec(ctx, `UPDATE core.domains SET whitelist = $2 WHERE id = $1`, id, whitelist)
-	if err != nil {
-		return fmt.Errorf("set whitelist: %w", err)
+// SetDomainStatusWithHistory updates core.domains.status and appends core.domain_status.
+func (r *domainRepository) SetDomainStatusWithHistory(ctx context.Context, id uuid.UUID, status string, changedBy, notes string) error {
+	if _, err := models.ParseDomainStatus(status); err != nil {
+		return err
 	}
-	return nil
-}
-
-// SetWhitelistWithStatus atomically updates core.domains.whitelist and inserts a row in core.domain_status.
-func (r *domainRepository) SetWhitelistWithStatus(ctx context.Context, id uuid.UUID, whitelist bool, changedBy, notes string) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	_, err = tx.Exec(ctx, `UPDATE core.domains SET whitelist = $2 WHERE id = $1`, id, whitelist)
+	_, err = tx.Exec(ctx, `UPDATE core.domains SET status = $2 WHERE id = $1`, id, status)
 	if err != nil {
-		return fmt.Errorf("update whitelist: %w", err)
+		return fmt.Errorf("update domain status: %w", err)
 	}
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO core.domain_status (id, domain_id, whitelist, changed_by, notes)
+		INSERT INTO core.domain_status (id, domain_id, status, changed_by, notes)
 		VALUES ($1, $2, $3, $4, $5)
-	`, uuid.New(), id, whitelist, changedBy, notes)
+	`, uuid.New(), id, status, changedBy, notes)
 	if err != nil {
 		return fmt.Errorf("insert domain_status: %w", err)
 	}
@@ -352,11 +343,11 @@ func (r *domainRepository) CreateWhitelistRequest(ctx context.Context, request *
 	return request, nil
 }
 
-// Update updates domain fields (value, type, whitelist only)
+// Update updates domain fields (value, type, status)
 func (r *domainRepository) Update(ctx context.Context, domain *models.Domain) error {
 	_, err := r.db.Exec(ctx, `
-		UPDATE core.domains SET value = $2, type = $3, whitelist = $4 WHERE id = $1
-	`, domain.ID, domain.Value, domain.Type, domain.Whitelist)
+		UPDATE core.domains SET value = $2, type = $3, status = $4 WHERE id = $1
+	`, domain.ID, domain.Value, domain.Type, domain.Status)
 	if err != nil {
 		return fmt.Errorf("update domain: %w", err)
 	}
@@ -366,10 +357,10 @@ func (r *domainRepository) Update(ctx context.Context, domain *models.Domain) er
 // GetByValueAndType finds a domain by value and type (with records)
 func (r *domainRepository) GetByValueAndType(ctx context.Context, value, typ string) (*models.Domain, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT id, value, type, whitelist FROM core.domains WHERE value = $1 AND type = $2
+		SELECT id, value, type, status FROM core.domains WHERE value = $1 AND type = $2
 	`, value, typ)
 	var d models.Domain
-	if err := row.Scan(&d.ID, &d.Value, &d.Type, &d.Whitelist); err != nil {
+	if err := row.Scan(&d.ID, &d.Value, &d.Type, &d.Status); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -383,16 +374,14 @@ func (r *domainRepository) GetByValueAndType(ctx context.Context, value, typ str
 	return &d, nil
 }
 
-// FindAutoWhitelistCandidateDomainIDs selects domain IDs where:
-//   - domain.whitelist = false
-//   - and the maximum domain_records.date is <= cutoff
-//     OR there are no domain_records at all (MAX(...) IS NULL).
+// FindAutoWhitelistCandidateDomainIDs selects domain IDs where status is blacklist,
+// and the maximum domain_records.date is <= cutoff or there are no records.
 func (r *domainRepository) FindAutoWhitelistCandidateDomainIDs(ctx context.Context, cutoff time.Time) ([]uuid.UUID, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT d.id
 		FROM core.domains d
 		LEFT JOIN core.domain_records r ON r.domain_id = d.id
-		WHERE d.whitelist = false
+		WHERE d.status = 'blacklist'
 		GROUP BY d.id
 		HAVING MAX(r.date) IS NULL OR MAX(r.date) <= $1
 	`, cutoff)
@@ -446,8 +435,8 @@ func (r *domainRepository) UpsertRTIRDomainRecord(ctx context.Context, rec model
 
 	if err == nil {
 		_, err = tx.Exec(ctx, `
-			UPDATE core.domains SET value = $2, type = $3, whitelist = $4 WHERE id = $1
-		`, domID, rec.Value, rec.Type, rec.Whitelist)
+			UPDATE core.domains SET value = $2, type = $3 WHERE id = $1
+		`, domID, rec.Value, rec.Type)
 		if err != nil {
 			return fmt.Errorf("update domain from rtir: %w", err)
 		}
@@ -463,29 +452,27 @@ func (r *domainRepository) UpsertRTIRDomainRecord(ctx context.Context, rec model
 	}
 
 	var domainID uuid.UUID
-	var isNewDomain bool
 	err = tx.QueryRow(ctx, `
 		SELECT id FROM core.domains WHERE value = $1 AND type = $2
 	`, rec.Value, rec.Type).Scan(&domainID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		isNewDomain = true
 		domainID = uuid.New()
 		_, err = tx.Exec(ctx, `
-			INSERT INTO core.domains (id, value, type, whitelist)
+			INSERT INTO core.domains (id, value, type, status)
 			VALUES ($1, $2, $3, $4)
-		`, domainID, rec.Value, rec.Type, rec.Whitelist)
+		`, domainID, rec.Value, rec.Type, models.DomainStatusPending)
 		if err != nil {
 			return fmt.Errorf("insert domain from rtir: %w", err)
 		}
+		_, err = tx.Exec(ctx, `
+			INSERT INTO core.domain_status (id, domain_id, status, changed_by, notes)
+			VALUES ($1, $2, $3, $4, $5)
+		`, uuid.New(), domainID, models.DomainStatusPending, "rtir-play-sync", "first record")
+		if err != nil {
+			return fmt.Errorf("insert initial domain_status from rtir: %w", err)
+		}
 	} else if err != nil {
 		return fmt.Errorf("lookup domain by value: %w", err)
-	} else {
-		_, err = tx.Exec(ctx, `
-			UPDATE core.domains SET whitelist = $2 WHERE id = $1
-		`, domainID, rec.Whitelist)
-		if err != nil {
-			return fmt.Errorf("update domain whitelist from rtir: %w", err)
-		}
 	}
 
 	recordID := uuid.New()
@@ -495,16 +482,6 @@ func (r *domainRepository) UpsertRTIRDomainRecord(ctx context.Context, rec model
 	`, recordID, domainID, rec.TicketID, rec.Description, rec.Tags, rec.RecordDate, "rtir", rec.LastSuccessfulSyncAt)
 	if err != nil {
 		return fmt.Errorf("insert domain_record from rtir: %w", err)
-	}
-
-	if isNewDomain && !rec.Whitelist {
-		_, err = tx.Exec(ctx, `
-			INSERT INTO core.domain_status (id, domain_id, whitelist, changed_by, notes)
-			VALUES ($1, $2, $3, $4, $5)
-		`, uuid.New(), domainID, false, "system", "first record")
-		if err != nil {
-			return fmt.Errorf("insert initial domain_status: %w", err)
-		}
 	}
 
 	return tx.Commit(ctx)
@@ -518,10 +495,11 @@ func (r *domainRepository) ListDomainIDsForPNRISCSync(ctx context.Context, limit
 	}
 	rows, err := r.db.Query(ctx, `
 		SELECT id FROM core.domains
-		WHERE pnrisc_last_synced_at IS NULL OR last_updated > pnrisc_last_synced_at
+		WHERE (pnrisc_last_synced_at IS NULL OR last_updated > pnrisc_last_synced_at)
+		  AND status <> $2
 		ORDER BY last_updated ASC
 		LIMIT $1
-	`, limit)
+	`, limit, models.DomainStatusPending)
 	if err != nil {
 		return nil, fmt.Errorf("list domains for pnrisc sync: %w", err)
 	}
@@ -539,18 +517,18 @@ func (r *domainRepository) ListDomainIDsForPNRISCSync(ctx context.Context, limit
 
 func (r *domainRepository) GetPNRISCSyncPayload(ctx context.Context, domainID uuid.UUID) (*models.PNRISCDomainPayload, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT value, type, whitelist FROM core.domains WHERE id = $1
+		SELECT value, type, status FROM core.domains WHERE id = $1
 	`, domainID)
 	var p models.PNRISCDomainPayload
 	p.DomainID = domainID
-	if err := row.Scan(&p.Value, &p.Type, &p.Whitelist); err != nil {
+	if err := row.Scan(&p.Value, &p.Type, &p.Status); err != nil {
 		return nil, fmt.Errorf("get domain for pnrisc: %w", err)
 	}
 
 	var dateAdded sql.NullTime
 	if err := r.db.QueryRow(ctx, `
 		SELECT MAX(changed_at) FROM core.domain_status
-		WHERE domain_id = $1 AND whitelist = false
+		WHERE domain_id = $1 AND status = 'blacklist'
 	`, domainID).Scan(&dateAdded); err != nil {
 		return nil, fmt.Errorf("pnrisc date_added: %w", err)
 	}
@@ -559,30 +537,22 @@ func (r *domainRepository) GetPNRISCSyncPayload(ctx context.Context, domainID uu
 		p.DateAdded = &t
 	}
 
-	tagRows, err := r.db.Query(ctx, `
-		SELECT DISTINCT unnest(tags) AS tag
-		FROM core.domain_records
-		WHERE domain_id = $1 AND tags IS NOT NULL
-	`, domainID)
-	if err != nil {
-		return nil, fmt.Errorf("pnrisc tags: %w", err)
-	}
-	defer tagRows.Close()
-	var tags []string
-	for tagRows.Next() {
-		var tag sql.NullString
-		if err := tagRows.Scan(&tag); err != nil {
-			return nil, fmt.Errorf("scan tag: %w", err)
+	var desc sql.NullString
+	errDesc := r.db.QueryRow(ctx, `
+		SELECT description FROM core.domain_records
+		WHERE domain_id = $1
+		ORDER BY date DESC
+		LIMIT 1
+	`, domainID).Scan(&desc)
+	if errDesc != nil {
+		if errors.Is(errDesc, pgx.ErrNoRows) {
+			p.Reason = ""
+		} else {
+			return nil, fmt.Errorf("pnrisc last record description: %w", errDesc)
 		}
-		if tag.Valid && strings.TrimSpace(tag.String) != "" {
-			tags = append(tags, tag.String)
-		}
+	} else if desc.Valid {
+		p.Reason = strings.TrimSpace(desc.String)
 	}
-	if err := tagRows.Err(); err != nil {
-		return nil, err
-	}
-	sort.Strings(tags)
-	p.ReasonTags = strings.Join(tags, ",")
 
 	return &p, nil
 }

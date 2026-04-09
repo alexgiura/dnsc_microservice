@@ -7,9 +7,9 @@ import DomainRow from '@/components/DomainRow.vue'
 import AddDomainDialog from '@/components/AddDomainDialog.vue'
 import StatusChangeDialog from '@/components/StatusChangeDialog.vue'
 import { domainsApi } from '@/api/domains'
-import type { Domain, ThreatStatus } from '@/models/domain'
+import type { Domain, DomainStatusValue } from '@/models/domain'
 
-type FilterTab = 'all' | 'threat' | 'trusted'
+type FilterTab = 'all' | 'blacklist' | 'whitelist' | 'pending'
 
 const domains = ref<Domain[]>([])
 const loading = ref(true)
@@ -20,8 +20,8 @@ const dialogOpen = ref(false)
 const statusDialog = ref<null | {
   domainId: string
   domainValue: string
-  currentStatus: ThreatStatus
-  targetStatus: ThreatStatus
+  currentStatus: DomainStatusValue
+  targetStatus: DomainStatusValue
 }>(null)
 
 async function fetchDomains() {
@@ -29,12 +29,10 @@ async function fetchDomains() {
   error.value = null
   try {
     const list = await domainsApi.list()
-    // Backend-ul poate răspunde `null` când nu există date.
     const normalized = Array.isArray(list) ? list : []
-    // Backend poate trimite `records`/liste ca `null` când nu există date.
-    // Normalizăm ca să nu crape render-ul în DomainRow.
     domains.value = normalized.map((d) => ({
       ...d,
+      status: d.status ?? 'pending',
       records: d.records ?? [],
       status_history: d.status_history ?? [],
       whitelist_requests: d.whitelist_requests ?? [],
@@ -55,7 +53,7 @@ async function addDomain(payload: { value: string; description: string; ticketId
   try {
     await domainsApi.save({
       value: payload.value.trim(),
-      whitelist: false,
+      status: 'pending',
       records: [
         {
           ticket_id: payload.ticketId?.trim() ?? null,
@@ -73,17 +71,15 @@ async function addDomain(payload: { value: string; description: string; ticketId
   }
 }
 
-function setStatus(id: string, status: ThreatStatus) {
+function setStatus(id: string, targetStatus: DomainStatusValue) {
   const domain = domains.value.find((d) => d.id === id)
   if (!domain) return
-
-  const currentStatus: ThreatStatus = domain.whitelist ? 'trusted' : 'threat'
 
   statusDialog.value = {
     domainId: id,
     domainValue: domain.value,
-    currentStatus,
-    targetStatus: status,
+    currentStatus: domain.status,
+    targetStatus,
   }
 }
 
@@ -92,26 +88,29 @@ const filtered = computed(() =>
     const matchesSearch = d.value.toLowerCase().includes(search.value.toLowerCase())
     const matchesFilter =
       activeFilter.value === 'all' ||
-      (activeFilter.value === 'trusted' && d.whitelist) ||
-      (activeFilter.value === 'threat' && !d.whitelist)
+      (activeFilter.value === 'whitelist' && d.status === 'whitelist') ||
+      (activeFilter.value === 'blacklist' && d.status === 'blacklist') ||
+      (activeFilter.value === 'pending' && d.status === 'pending')
     return matchesSearch && matchesFilter
   })
 )
 
-const threatCount = computed(() => domains.value.filter((d) => !d.whitelist).length)
-const trustedCount = computed(() => domains.value.filter((d) => d.whitelist).length)
+const pendingCount = computed(() => domains.value.filter((d) => d.status === 'pending').length)
+const blacklistCount = computed(() => domains.value.filter((d) => d.status === 'blacklist').length)
+const whitelistCount = computed(() => domains.value.filter((d) => d.status === 'whitelist').length)
 
 const tabs = computed(() => [
   { key: 'all' as const, label: 'Toate', count: domains.value.length },
-  { key: 'threat' as const, label: 'Blacklist', count: threatCount.value },
-  { key: 'trusted' as const, label: 'Whitelist', count: trustedCount.value },
+  { key: 'blacklist' as const, label: 'Blacklist', count: blacklistCount.value },
+  { key: 'whitelist' as const, label: 'Whitelist', count: whitelistCount.value },
+  { key: 'pending' as const, label: 'Pending', count: pendingCount.value },
 ])
 </script>
 
 <template>
   <div class="flex flex-col gap-3">
     <div class="flex items-center justify-between">
-      <div class="flex gap-1">
+      <div class="flex flex-wrap gap-1">
         <button
           v-for="tab in tabs"
           :key="tab.key"

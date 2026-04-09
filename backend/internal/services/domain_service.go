@@ -24,13 +24,13 @@ type DomainService interface {
 	GetDomainByID(ctx context.Context, id uuid.UUID) (*models.Domain, error)
 	GetDomains(ctx context.Context) ([]*models.Domain, error)
 	GetPublicBlacklistedDomains(ctx context.Context) ([]*models.PublicDomain, error)
-	ChangeDomainStatus(ctx context.Context, id uuid.UUID, whitelist bool, changedBy, notes string) error
+	ChangeDomainStatus(ctx context.Context, id uuid.UUID, status string, changedBy, notes string) error
 	RequestWhitelist(ctx context.Context, domainID uuid.UUID, input models.CreateWhitelistRequestInput) (*models.WhitelistRequest, error)
 	AutoWhitelistStaleDomains(ctx context.Context, cutoff time.Time, changedBy, notes string) error
 	UpdateDomain(ctx context.Context, id uuid.UUID, input models.UpdateDomainInput) (*models.Domain, error)
 	// SyncRTIRPlayDomains searches RTIR tickets, loads each by ID, upserts domains + checkpoint.
 	SyncRTIRPlayDomains(ctx context.Context) error
-	// SyncPNRISCDomains POSTs domains whose last_updated is newer than pnrisc_last_synced_at, then marks sync.
+	// SyncPNRISCDomains POSTs domains whose last_updated is newer than pnrisc_last_synced_at (excluding status pending), then marks sync.
 	SyncPNRISCDomains(ctx context.Context) error
 	// TryReimportRTIRTicket GETs RTIR ticket by id and runs the same upsert path as the periodic sync.
 	TryReimportRTIRTicket(ctx context.Context, ticketID string) error
@@ -81,12 +81,19 @@ func (s *domainService) SaveDomain(ctx context.Context, input models.SaveDomainI
 	}
 
 	if existing == nil {
+		st := strings.TrimSpace(input.Status)
+		if st == "" {
+			st = models.DomainStatusPending
+		}
+		if _, err := models.ParseDomainStatus(st); err != nil {
+			return nil, err
+		}
 		domain := &models.Domain{
-			ID:        uuid.New(),
-			Value:     input.Value,
-			Type:      typ,
-			Whitelist: input.Whitelist,
-			Records:   nil,
+			ID:      uuid.New(),
+			Value:   input.Value,
+			Type:    typ,
+			Status:  st,
+			Records: nil,
 		}
 		for _, r := range input.Records {
 			domain.Records = append(domain.Records, models.DomainRecord{
@@ -141,9 +148,9 @@ func (s *domainService) GetPublicBlacklistedDomains(ctx context.Context) ([]*mod
 	return s.repo.ListPublicBlacklisted(ctx)
 }
 
-// ChangeDomainStatus updates domain whitelist and stores a history entry.
-func (s *domainService) ChangeDomainStatus(ctx context.Context, id uuid.UUID, whitelist bool, changedBy, notes string) error {
-	return s.repo.SetWhitelistWithStatus(ctx, id, whitelist, changedBy, notes)
+// ChangeDomainStatus updates domain status and stores a history entry.
+func (s *domainService) ChangeDomainStatus(ctx context.Context, id uuid.UUID, status string, changedBy, notes string) error {
+	return s.repo.SetDomainStatusWithHistory(ctx, id, status, changedBy, notes)
 }
 
 func (s *domainService) RequestWhitelist(ctx context.Context, domainID uuid.UUID, input models.CreateWhitelistRequestInput) (*models.WhitelistRequest, error) {
@@ -161,7 +168,7 @@ func (s *domainService) RequestWhitelist(ctx context.Context, domainID uuid.UUID
 	return s.repo.CreateWhitelistRequest(ctx, req)
 }
 
-// AutoWhitelistStaleDomains sets whitelist=true for every domain whose latest
+// AutoWhitelistStaleDomains sets status to whitelist for every blacklist domain whose latest
 // domain_record date is <= cutoff (or has no records at all), and inserts
 // a matching row into core.domain_status.
 func (s *domainService) AutoWhitelistStaleDomains(ctx context.Context, cutoff time.Time, changedBy, notes string) error {
@@ -171,8 +178,7 @@ func (s *domainService) AutoWhitelistStaleDomains(ctx context.Context, cutoff ti
 	}
 
 	for _, id := range ids {
-		// whitelist=true to mark as trusted.
-		if err := s.repo.SetWhitelistWithStatus(ctx, id, true, changedBy, notes); err != nil {
+		if err := s.repo.SetDomainStatusWithHistory(ctx, id, models.DomainStatusWhitelist, changedBy, notes); err != nil {
 			return err
 		}
 	}
@@ -180,7 +186,7 @@ func (s *domainService) AutoWhitelistStaleDomains(ctx context.Context, cutoff ti
 	return nil
 }
 
-// UpdateDomain updates only Value and/or Whitelist
+// UpdateDomain updates only Value and/or status
 func (s *domainService) UpdateDomain(ctx context.Context, id uuid.UUID, input models.UpdateDomainInput) (*models.Domain, error) {
 	current, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -190,8 +196,12 @@ func (s *domainService) UpdateDomain(ctx context.Context, id uuid.UUID, input mo
 		current.Value = *input.Value
 		current.Type = domainTypeFromValue(current.Value)
 	}
-	if input.Whitelist != nil {
-		current.Whitelist = *input.Whitelist
+	if input.Status != nil {
+		st, err := models.ParseDomainStatus(*input.Status)
+		if err != nil {
+			return nil, err
+		}
+		current.Status = st
 	}
 	if err := s.repo.Update(ctx, current); err != nil {
 		return nil, err
@@ -267,7 +277,6 @@ func (s *domainService) syncOneRTIRTicket(ctx context.Context, ticketID string, 
 			TicketID:             ticketID,
 			Value:                val,
 			Type:                 typ,
-			Whitelist:            false,
 			Description:          data.Description,
 			Tags:                 data.Tags,
 			RecordDate:           data.RecordTime,
@@ -332,8 +341,8 @@ func (s *domainService) SyncPNRISCDomains(ctx context.Context) error {
 			Domain:      payload.Value,
 			Type:        payload.Type,
 			DateAdded:   dateAdded,
-			Blacklisted: !payload.Whitelist,
-			Reason:      payload.ReasonTags,
+			Blacklisted: payload.Status == models.DomainStatusBlacklist,
+			Reason:      payload.Reason,
 		}
 		remoteID, err := s.pnrisc.UpsertDomain(ctx, body)
 		if err != nil {

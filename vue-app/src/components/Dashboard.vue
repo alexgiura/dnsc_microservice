@@ -8,18 +8,21 @@ import {
   Globe,
   Server,
   CalendarDays,
+  CircleDot,
 } from 'lucide-vue-next'
 import { mockDomains } from '@/data/mockData'
 import Badge from '@/components/ui/Badge.vue'
 
 const blacklistCount = computed(() => mockDomains.filter((d) => d.status === 'blacklist').length)
 const whitelistCount = computed(() => mockDomains.filter((d) => d.status === 'whitelist').length)
+const pendingCount = computed(() => mockDomains.filter((d) => d.status === 'pending').length)
 const totalTickets = computed(() => mockDomains.reduce((sum, d) => sum + d.tickets.length, 0))
 
 const stats = computed(() => [
   { label: 'Total Domenii', value: mockDomains.length, icon: Activity, color: 'text-foreground' },
   { label: 'Blacklisted', value: blacklistCount.value, icon: ShieldAlert, color: 'text-destructive' },
   { label: 'Whitelisted', value: whitelistCount.value, icon: ShieldCheck, color: 'text-success' },
+  { label: 'Pending', value: pendingCount.value, icon: CircleDot, color: 'text-muted-foreground' },
   { label: 'Total Raportări', value: totalTickets.value, icon: AlertTriangle, color: 'text-muted-foreground' },
 ])
 
@@ -33,7 +36,7 @@ const recentDomains = computed(() =>
 <template>
   <div class="flex flex-col gap-6">
     <!-- Stat cards -->
-    <div class="grid grid-cols-4 gap-4">
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
       <div
         v-for="stat in stats"
         :key="stat.label"
@@ -78,10 +81,14 @@ const recentDomains = computed(() =>
         </span>
         <span class="flex justify-center">
           <Badge
-            :variant="d.status === 'whitelist' ? 'success' : 'destructive'"
+            :variant="
+              d.status === 'whitelist' ? 'trusted' : d.status === 'blacklist' ? 'threat' : 'pending'
+            "
             class="text-[10px] uppercase justify-center"
           >
-            {{ d.status === 'whitelist' ? 'Whitelist' : 'Blacklist' }}
+            {{
+              d.status === 'whitelist' ? 'Whitelist' : d.status === 'blacklist' ? 'Blacklist' : 'Pending'
+            }}
           </Badge>
         </span>
         <span class="text-xs text-muted-foreground text-center font-medium">

@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS core.domains (
     id UUID PRIMARY KEY,
     value TEXT NOT NULL,
     type TEXT NOT NULL,
-    whitelist BOOLEAN NOT NULL DEFAULT false,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('whitelist', 'blacklist', 'pending')),
     pnrisc_last_synced_at TIMESTAMPTZ,
     pnrisc_sync_status TEXT,
     pnrisc_remote_id TEXT,
@@ -20,7 +20,7 @@ RETURNS TRIGGER AS $$
 BEGIN
   IF (OLD.value IS DISTINCT FROM NEW.value
       OR OLD.type IS DISTINCT FROM NEW.type
-      OR OLD.whitelist IS DISTINCT FROM NEW.whitelist) THEN
+      OR OLD.status IS DISTINCT FROM NEW.status) THEN
     NEW.last_updated := now();
   END IF;
   RETURN NEW;
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS core.domain_records (
 
 CREATE INDEX IF NOT EXISTS idx_domains_value ON core.domains(value);
 CREATE INDEX IF NOT EXISTS idx_domains_type ON core.domains(type);
-CREATE INDEX IF NOT EXISTS idx_domains_whitelist ON core.domains(whitelist);
+CREATE INDEX IF NOT EXISTS idx_domains_status ON core.domains(status);
 CREATE INDEX IF NOT EXISTS idx_domain_records_domain_id ON core.domain_records(domain_id);
 CREATE INDEX IF NOT EXISTS idx_domain_records_date ON core.domain_records(date);
 
@@ -54,7 +54,7 @@ CREATE INDEX IF NOT EXISTS idx_domain_records_date ON core.domain_records(date);
 CREATE TABLE IF NOT EXISTS core.domain_status (
     id UUID PRIMARY KEY,
     domain_id UUID NOT NULL REFERENCES core.domains(id) ON DELETE CASCADE,
-    whitelist BOOLEAN NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('whitelist', 'blacklist', 'pending')),
     changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     changed_by TEXT NOT NULL,
     notes TEXT
