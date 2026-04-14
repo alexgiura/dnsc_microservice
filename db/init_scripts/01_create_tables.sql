@@ -82,7 +82,7 @@ CREATE INDEX IF NOT EXISTS idx_whitelist_requests_created_at ON core.whitelist_r
 CREATE TABLE IF NOT EXISTS core.rtir_import_errors (
     id UUID PRIMARY KEY,
     ticket_id TEXT NOT NULL UNIQUE,
-    source TEXT NOT NULL DEFAULT 'rtir-play-sync',
+    source TEXT NOT NULL DEFAULT 'rtir-sync',
     error_message TEXT NOT NULL,
     date TIMESTAMPTZ NOT NULL,
     last_sync_try_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -90,4 +90,75 @@ CREATE TABLE IF NOT EXISTS core.rtir_import_errors (
 
 CREATE INDEX IF NOT EXISTS idx_rtir_import_errors_last_try ON core.rtir_import_errors(last_sync_try_at);
 
--- Baze cu coloana veche first_seen_at: ALTER TABLE core.rtir_import_errors RENAME COLUMN first_seen_at TO date;
+-- ---------------------------------------------------------------------------
+-- Etichete (UI + domenii); listă administrată în DB
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS core.tag (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    value TEXT NOT NULL UNIQUE,
+    sort_order INT NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_tag_sort_order ON core.tag(sort_order);
+
+INSERT INTO core.tag (value, sort_order) VALUES
+    ('malware', 10),
+    ('phishing', 20),
+    ('brute-force', 30),
+    ('ransomware', 40),
+    ('c2', 50),
+    ('apt', 60),
+    ('ddos', 70),
+    ('dns-tunnel', 80),
+    ('exfiltration', 90),
+    ('port-scan', 100),
+    ('social-engineering', 110),
+    ('ssh', 120),
+    ('critical', 130),
+    ('false-positive', 140),
+    ('verified', 150),
+    ('internal', 160)
+ON CONFLICT (value) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Auth: utilizatori și sesiuni (cookie session_id pe server)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS core.app_user (
+    id UUID PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE OR REPLACE FUNCTION core.app_user_touch_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_app_user_updated_at ON core.app_user;
+CREATE TRIGGER trg_app_user_updated_at
+BEFORE UPDATE ON core.app_user
+FOR EACH ROW
+EXECUTE PROCEDURE core.app_user_touch_updated_at();
+
+CREATE TABLE IF NOT EXISTS core.user_session (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES core.app_user(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_session_user_id ON core.user_session(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_session_expires_at ON core.user_session(expires_at);
+
+-- Utilizator inițial (schimbă parola în producție)
+INSERT INTO core.app_user (id, username, password, is_active)
+VALUES ('00000000-0000-0000-0000-000000000001', 'admin', 'admin', true)
+ON CONFLICT (username) DO NOTHING;

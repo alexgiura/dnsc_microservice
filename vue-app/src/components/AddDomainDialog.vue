@@ -5,12 +5,13 @@ import Dialog from '@/components/ui/Dialog.vue'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
 import Textarea from '@/components/ui/Textarea.vue'
+import { listTags } from '@/api/tags'
 
-const AVAILABLE_TAGS = [
-  'malware', 'phishing', 'brute-force', 'ransomware', 'c2', 'apt', 'ddos',
-  'dns-tunnel', 'exfiltration', 'port-scan', 'social-engineering', 'ssh',
-  'critical', 'false-positive', 'verified', 'internal',
-]
+const availableTags = ref<string[]>([])
+const tagsLoading = ref(false)
+const tagsError = ref<string | null>(null)
+/** După un GET reușit (inclusiv listă goală), nu mai refacem request la fiecare deschidere. */
+const tagsLoadedOnce = ref(false)
 
 const props = defineProps<{
   open: boolean
@@ -26,13 +27,31 @@ const description = ref('')
 const ticketId = ref('')
 const selectedTags = ref<string[]>([])
 
+async function loadTagsIfNeeded() {
+  if (tagsLoadedOnce.value || tagsLoading.value) return
+  tagsLoading.value = true
+  tagsError.value = null
+  try {
+    const rows = await listTags()
+    availableTags.value = rows.map((t) => t.value)
+    tagsLoadedOnce.value = true
+  } catch (e) {
+    tagsError.value = e instanceof Error ? e.message : 'Nu s-au putut încărca etichetele'
+    availableTags.value = []
+  } finally {
+    tagsLoading.value = false
+  }
+}
+
 watch(() => props.open, (isOpen) => {
   if (!isOpen) {
     value.value = ''
     description.value = ''
     ticketId.value = ''
     selectedTags.value = []
+    return
   }
+  void loadTagsIfNeeded()
 })
 
 const isIP = computed(() => /^(\d{1,3}\.){3}\d{1,3}$/.test(value.value.trim()))
@@ -101,9 +120,11 @@ function handleSubmit() {
 
         <div class="flex flex-col gap-1.5">
           <label class="text-sm font-medium leading-none">Etichete</label>
-          <div class="flex flex-wrap gap-1.5">
+          <p v-if="tagsLoading" class="text-xs text-muted-foreground">Se încarcă etichetele…</p>
+          <p v-else-if="tagsError" class="text-xs text-destructive">{{ tagsError }}</p>
+          <div v-else class="flex flex-wrap gap-1.5">
             <button
-              v-for="tag in AVAILABLE_TAGS"
+              v-for="tag in availableTags"
               :key="tag"
               type="button"
               :class="[

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { ChevronDown, ChevronRight, Globe, Server, MoreVertical, ShieldCheck, ShieldAlert } from 'lucide-vue-next'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
@@ -16,14 +16,43 @@ const props = defineProps<{
 const emit = defineEmits<{ setStatus: [id: string, status: DomainStatusValue] }>()
 
 const expanded = ref(false)
+const expandedPanelRef = ref<HTMLElement | null>(null)
 const status = computed(() => props.domain.status)
 const recordsList = computed(() => props.domain.records ?? [])
 const activeTab = ref<'tickets' | 'history' | 'whitelist'>('tickets')
 const historyCount = computed(() => props.domain.status_history?.length ?? 0)
 const whitelistCount = computed(() => props.domain.whitelist_requests?.length ?? 0)
 
-watch(expanded, (val) => {
-  if (val) activeTab.value = 'tickets'
+/** Derulează pagina astfel încât panoul expandat să nu iasă sub ecran. */
+function scrollExpandedPanelIntoView() {
+  const el = expandedPanelRef.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const margin = 16
+  const viewH = window.visualViewport?.height ?? window.innerHeight
+  const maxBottom = viewH - margin
+
+  if (rect.bottom > maxBottom) {
+    window.scrollBy({ top: rect.bottom - maxBottom, behavior: 'smooth' })
+  } else if (rect.top < margin) {
+    window.scrollBy({ top: rect.top - margin, behavior: 'smooth' })
+  }
+}
+
+watch(expanded, async (val) => {
+  if (val) {
+    activeTab.value = 'tickets'
+    await nextTick()
+    requestAnimationFrame(() => {
+      scrollExpandedPanelIntoView()
+    })
+  }
+})
+
+watch(activeTab, async () => {
+  if (!expanded.value) return
+  await nextTick()
+  requestAnimationFrame(() => scrollExpandedPanelIntoView())
 })
 
 function setStatus(next: DomainStatusValue) {
@@ -123,7 +152,11 @@ function recordsAsTickets(records: DomainRecord[]) {
       </span>
     </button>
 
-    <div v-if="expanded" class="animate-slide-down bg-muted/30 border-t border-border">
+    <div
+      v-if="expanded"
+      ref="expandedPanelRef"
+      class="animate-slide-down bg-muted/30 border-t border-border scroll-mt-4"
+    >
       <div class="flex gap-2 px-4 py-3">
         <button
           type="button"

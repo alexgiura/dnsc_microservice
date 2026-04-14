@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { cn } from '@/lib/utils'
+import { computeFlipPopoverY } from '@/lib/popoverFlip'
 import { sharedOpenMenuId, nextDropdownMenuId } from '@/components/ui/dropdownMenuShared'
 
 const menuId = nextDropdownMenuId()
@@ -15,16 +16,38 @@ const contentStyle = ref<Record<string, string>>({
 })
 
 function updatePosition() {
-  const el = triggerEl.value
-  if (!el) return
-  const r = el.getBoundingClientRect()
-  contentStyle.value = {
-    position: 'fixed',
-    top: `${Math.round(r.bottom + 4)}px`,
-    right: `${Math.round(window.innerWidth - r.right)}px`,
-    zIndex: '50',
-    minWidth: '8rem',
-  }
+  requestAnimationFrame(() => {
+    const trigger = triggerEl.value
+    const content = contentEl.value
+    if (!trigger) return
+    const r = trigger.getBoundingClientRect()
+    const vw = window.innerWidth
+
+    if (!content) {
+      void nextTick(() => updatePosition())
+      return
+    }
+
+    const contentH = content.offsetHeight
+    if (contentH === 0 && open.value) {
+      void nextTick(() => updatePosition())
+      return
+    }
+
+    const { top, maxHeight } = computeFlipPopoverY(r, contentH)
+    const right = vw - r.right
+
+    contentStyle.value = {
+      position: 'fixed',
+      top: `${Math.round(top)}px`,
+      right: `${Math.round(right)}px`,
+      zIndex: '50',
+      minWidth: '8rem',
+      maxHeight: `${Math.round(maxHeight)}px`,
+      overflowX: 'hidden',
+      overflowY: 'auto',
+    }
+  })
 }
 
 watch(open, async (v) => {
@@ -83,7 +106,7 @@ onUnmounted(() => {
         ref="contentEl"
         :style="contentStyle"
         :class="cn(
-          'overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md'
+          'rounded-md border bg-popover p-1 text-popover-foreground shadow-md'
         )"
         @click.stop="open = false"
       >

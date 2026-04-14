@@ -78,6 +78,11 @@ type Config struct {
 	DomainAutoWhitelistSettings DomainAutoWhitelistSettings
 	DomainRTIRPlaySyncSettings  DomainRTIRPlaySyncSettings
 	DomainPNRISCSyncSettings    DomainPNRISCSyncSettings
+	// Session / CORS (cookie-based auth)
+	SessionCookieName    string `env:"SESSION_COOKIE_NAME" envDefault:"session_id"`
+	SessionTTLDays       int    `env:"SESSION_TTL_DAYS" envDefault:"7"`
+	SessionCookieSecure  bool   `env:"SESSION_COOKIE_SECURE" envDefault:"false"`
+	CORSAllowedOrigins   string `env:"CORS_ALLOWED_ORIGINS" envDefault:"http://localhost:5173,http://127.0.0.1:5173"`
 }
 
 // ConnectPostgreSQL connects to PostgreSQL database and returns a connection pool
@@ -200,4 +205,33 @@ func (cfg *Config) PostgreSQLConnectionString() string {
 		cfg.DatabaseSettings.DbName,
 		sslMode,
 	)
+}
+
+// SessionTTL returns session lifetime duration.
+func (cfg *Config) SessionTTL() time.Duration {
+	d := cfg.SessionTTLDays
+	if d <= 0 {
+		d = 7
+	}
+	return time.Duration(d) * 24 * time.Hour
+}
+
+// CORSOriginsList splits CORS_ALLOWED_ORIGINS into trimmed origins.
+func (cfg *Config) CORSOriginsList() []string {
+	s := strings.TrimSpace(cfg.CORSAllowedOrigins)
+	if s == "" {
+		return []string{"http://localhost:5173"}
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"http://localhost:5173"}
+	}
+	return out
 }

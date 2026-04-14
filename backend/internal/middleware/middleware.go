@@ -7,19 +7,20 @@ import (
 	"github.com/rs/cors"
 )
 
-// CorsMiddleware handles CORS for all requests
-func CorsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// CorsMiddleware sets CORS with credentials; allowedOrigins must be explicit (not *) when AllowCredentials is true.
+func CorsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
+	if len(allowedOrigins) == 0 {
+		allowedOrigins = []string{"http://localhost:5173"}
+	}
+	return func(next http.Handler) http.Handler {
 		c := cors.New(cors.Options{
-			AllowedOrigins:   []string{"*"},
-			AllowedMethods:   []string{http.MethodPost, http.MethodGet, http.MethodPatch, http.MethodDelete, http.MethodPut},
+			AllowedOrigins:   allowedOrigins,
+			AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete, http.MethodOptions},
 			AllowedHeaders:   []string{"*"},
-			AllowCredentials: false,
+			AllowCredentials: true,
 		})
-
-		handler := c.Handler(next)
-		handler.ServeHTTP(w, r)
-	})
+		return c.Handler(next)
+	}
 }
 
 // APIKeyMiddleware validates API key from X-API-Key header

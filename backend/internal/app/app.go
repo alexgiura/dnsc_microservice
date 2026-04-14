@@ -10,7 +10,6 @@ import (
 	"dnsc_microservice/internal/clients/rtir"
 	"dnsc_microservice/internal/config"
 	"dnsc_microservice/internal/db"
-	"dnsc_microservice/internal/middleware"
 	"dnsc_microservice/internal/repository"
 	"dnsc_microservice/internal/routes"
 	"dnsc_microservice/internal/scheduler"
@@ -61,6 +60,7 @@ func NewApp(cfg *config.Config) (*App, error) {
 		pnriscClient,
 		cfg.DomainRTIRPlaySyncSettings.Timezone,
 		cfg.DomainRTIRPlaySyncSettings.OverlapMinutes,
+		cfg.SessionTTL(),
 	)
 
 	autoScheduler := scheduler.NewDomainAutoWhitelistScheduler(
@@ -90,11 +90,9 @@ func NewApp(cfg *config.Config) (*App, error) {
 		cfg.DomainPNRISCSyncSettings.Timezone,
 	)
 
-	router := routes.RegisterRoutes(appServices)
+	handler := routes.RegisterRoutes(appServices, cfg)
 
-	handlerWithMiddleware := middleware.CorsMiddleware(router)
-
-	srv, err := server.NewServer(cfg.AppSettings.ServerPort, handlerWithMiddleware)
+	srv, err := server.NewServer(cfg.AppSettings.ServerPort, handler)
 	if err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("create server: %w", err)

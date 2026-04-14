@@ -1,7 +1,7 @@
-import { apiBaseUrl } from '@/config/api'
+import { apiFetch } from '@/api/client'
 import type { Domain, DomainRecord, DomainStatusValue } from '@/models/domain'
 
-const base = () => `${apiBaseUrl}/api/domains`
+const base = () => `/api/domains`
 
 export type { Domain, DomainRecord }
 
@@ -42,7 +42,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
 export const domainsApi = {
   /** POST /api/domains */
   async save(payload: SaveDomainPayload): Promise<Domain> {
-    const res = await fetch(base(), {
+    const res = await apiFetch(base(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -52,19 +52,19 @@ export const domainsApi = {
 
   /** GET /api/domains */
   async list(): Promise<Domain[]> {
-    const res = await fetch(base())
+    const res = await apiFetch(base())
     return handleResponse<Domain[]>(res)
   },
 
   /** GET /api/domains/:id */
   async getById(id: string): Promise<Domain> {
-    const res = await fetch(`${base()}/${id}`)
+    const res = await apiFetch(`${base()}/${id}`)
     return handleResponse<Domain>(res)
   },
 
   /** PATCH /api/domains/:id */
   async update(id: string, payload: UpdateDomainPayload): Promise<Domain> {
-    const res = await fetch(`${base()}/${id}`, {
+    const res = await apiFetch(`${base()}/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -74,7 +74,7 @@ export const domainsApi = {
 
   /** POST /api/domains/:id/whitelist — body: { status, changeBy, notes } */
   async setDomainStatus(id: string, payload: WhitelistDomainPayload): Promise<void> {
-    const res = await fetch(`${base()}/${id}/whitelist`, {
+    const res = await apiFetch(`${base()}/${id}/whitelist`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

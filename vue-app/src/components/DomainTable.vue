@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { Search, Plus, Loader2 } from 'lucide-vue-next'
+import { ref, computed, watch, onMounted } from 'vue'
+import { Search, Plus, Loader2, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import Input from '@/components/ui/Input.vue'
 import Button from '@/components/ui/Button.vue'
+import Select from '@/components/ui/Select.vue'
 import DomainRow from '@/components/DomainRow.vue'
 import AddDomainDialog from '@/components/AddDomainDialog.vue'
 import StatusChangeDialog from '@/components/StatusChangeDialog.vue'
@@ -11,7 +12,12 @@ import type { Domain, DomainStatusValue } from '@/models/domain'
 
 type FilterTab = 'all' | 'blacklist' | 'whitelist' | 'pending'
 
+const PAGE_SIZE_OPTIONS = [10, 20, 50] as const
+
 const domains = ref<Domain[]>([])
+const currentPage = ref(1)
+/** Implicit 10; poate fi schimbat din selectorul de sub tabel */
+const pageSize = ref<(typeof PAGE_SIZE_OPTIONS)[number]>(10)
 const loading = ref(true)
 const error = ref<string | null>(null)
 const search = ref('')
@@ -95,6 +101,45 @@ const filtered = computed(() =>
   })
 )
 
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(filtered.value.length / pageSize.value))
+)
+
+const paginatedFiltered = computed(() => {
+  const ps = pageSize.value
+  const start = (currentPage.value - 1) * ps
+  return filtered.value.slice(start, start + ps)
+})
+
+watch([search, activeFilter], () => {
+  currentPage.value = 1
+})
+
+watch(pageSize, () => {
+  currentPage.value = 1
+})
+
+watch(totalPages, (tp) => {
+  if (currentPage.value > tp) currentPage.value = tp
+})
+
+const pageRangeStart = computed(() =>
+  filtered.value.length === 0 ? 0 : (currentPage.value - 1) * pageSize.value + 1
+)
+const pageRangeEnd = computed(() =>
+  Math.min(currentPage.value * pageSize.value, filtered.value.length)
+)
+
+/** Text în dreapta: „0 rezultate” sau „X–Y din Z” (ca în designul React). */
+const paginationSummary = computed(() => {
+  if (filtered.value.length === 0) return '0 rezultate'
+  return `${pageRangeStart.value}–${pageRangeEnd.value} din ${filtered.value.length}`
+})
+
+function setPageSize(v: number) {
+  pageSize.value = v as (typeof PAGE_SIZE_OPTIONS)[number]
+}
+
 const pendingCount = computed(() => domains.value.filter((d) => d.status === 'pending').length)
 const blacklistCount = computed(() => domains.value.filter((d) => d.status === 'blacklist').length)
 const whitelistCount = computed(() => domains.value.filter((d) => d.status === 'whitelist').length)
@@ -131,7 +176,10 @@ const tabs = computed(() => [
       </Button>
     </div>
 
-    <div class="bg-card rounded-lg border border-border overflow-hidden relative min-h-[200px]">
+    <div
+      class="bg-card rounded-lg border border-border overflow-hidden relative"
+      :class="loading && 'min-h-[200px]'"
+    >
       <!-- Loading overlay -->
       <div
         v-if="loading"
@@ -171,12 +219,57 @@ const tabs = computed(() => [
         >
           Niciun domeniu găsit.
         </div>
-        <DomainRow
-          v-for="domain in filtered"
-          :key="domain.id"
-          :domain="domain"
-          @set-status="setStatus"
-        />
+        <!-- Wrapper: ultimul DomainRow e last-child → last:border-b-0; nu se mai dublează cu border-t la paginare -->
+        <div v-if="filtered.length > 0">
+          <DomainRow
+            v-for="domain in paginatedFiltered"
+            :key="domain.id"
+            :domain="domain"
+            @set-status="setStatus"
+          />
+        </div>
+
+        <div
+          v-if="filtered.length > 0"
+          class="flex items-center justify-between gap-4 border-t border-border bg-muted/30 px-4 py-3"
+        >
+          <div class="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Rânduri per pagină:</span>
+            <Select
+              :model-value="pageSize"
+              :options="PAGE_SIZE_OPTIONS"
+              @update:model-value="setPageSize"
+            />
+          </div>
+
+          <div class="flex items-center gap-2 text-sm text-muted-foreground">
+            <span class="tabular-nums">{{ paginationSummary }}</span>
+            <div class="flex gap-1">
+              <Button
+                variant="outline"
+                size="icon"
+                type="button"
+                class="h-8 w-8 shrink-0"
+                :disabled="currentPage <= 1"
+                aria-label="Pagina anterioară"
+                @click="currentPage--"
+              >
+                <ChevronLeft class="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                type="button"
+                class="h-8 w-8 shrink-0"
+                :disabled="currentPage >= totalPages"
+                aria-label="Pagina următoare"
+                @click="currentPage++"
+              >
+                <ChevronRight class="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
       </template>
     </div>
 

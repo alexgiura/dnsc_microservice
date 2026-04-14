@@ -7,6 +7,7 @@ import Textarea from '@/components/ui/Textarea.vue'
 import Badge from '@/components/ui/Badge.vue'
 import { domainsApi } from '@/api/domains'
 import type { DomainStatusValue } from '@/models/domain'
+import { currentUser } from '@/stores/auth'
 
 const props = defineProps<{
   open: boolean
@@ -62,12 +63,18 @@ async function handleConfirm() {
   const trimmed = comment.value.trim()
   if (!trimmed) return
 
+  const changeBy = currentUser.value?.username?.trim()
+  if (!changeBy) {
+    error.value = 'Utilizator necunoscut. Reîncearcă autentificarea.'
+    return
+  }
+
   error.value = null
   loading.value = true
   try {
     await domainsApi.setDomainStatus(props.domainId, {
       status: props.targetStatus,
-      changeBy: 'user@example.com',
+      changeBy,
       notes: trimmed,
     })
 

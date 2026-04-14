@@ -1,4 +1,4 @@
-import { apiBaseUrl } from '@/config/api'
+import { apiFetch } from '@/api/client'
 
 export interface RTIRImportErrorDTO {
   id: string
@@ -27,19 +27,17 @@ async function handleResponse<T>(res: Response): Promise<T> {
 export const rtirApi = {
   /** GET /api/rtir/import-errors */
   async getImportErrors(): Promise<RTIRImportErrorDTO[]> {
-    const res = await fetch(`${apiBaseUrl}/api/rtir/import-errors`)
+    const res = await apiFetch('/api/rtir/import-errors')
     return handleResponse<RTIRImportErrorDTO[]>(res)
   },
 
   /**
    * Retry sync for a failed ticket (POST /api/rtir/tickets/{ticketId}/reimport).
-   * Refetches RTIR ticket and upserts domains; removes row from import-errors on success.
    */
   async retryImport(ticketId: string): Promise<{ ticket_id: string; status: string }> {
-    const res = await fetch(
-      `${apiBaseUrl}/api/rtir/tickets/${encodeURIComponent(ticketId)}/reimport`,
-      { method: 'POST' }
-    )
+    const res = await apiFetch(`/api/rtir/tickets/${encodeURIComponent(ticketId)}/reimport`, {
+      method: 'POST',
+    })
     return handleResponse(res)
   },
 }
