@@ -67,7 +67,7 @@ async function submit() {
       <div class="flex flex-col space-y-1.5 text-center sm:text-left pr-6">
         <h2 class="text-lg font-semibold leading-none tracking-tight">Editează domeniu</h2>
         <p class="text-sm text-muted-foreground">
-          Modifică descrierea și statusul domeniului (valoarea rămâne neschimbată).
+          Modifică descrierea și statusul domeniului.
         </p>
       </div>
 
