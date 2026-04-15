@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button.vue'
 import Select from '@/components/ui/Select.vue'
 import DomainRow from '@/components/DomainRow.vue'
 import AddDomainDialog from '@/components/AddDomainDialog.vue'
+import EditDomainDialog from '@/components/EditDomainDialog.vue'
 import StatusChangeDialog from '@/components/StatusChangeDialog.vue'
 import { domainsApi } from '@/api/domains'
 import type { Domain, DomainStatusValue } from '@/models/domain'
@@ -23,6 +24,8 @@ const error = ref<string | null>(null)
 const search = ref('')
 const activeFilter = ref<FilterTab>('all')
 const dialogOpen = ref(false)
+const editOpen = ref(false)
+const editDomain = ref<Domain | null>(null)
 const statusDialog = ref<null | {
   domainId: string
   domainValue: string
@@ -87,6 +90,16 @@ function setStatus(id: string, targetStatus: DomainStatusValue) {
     currentStatus: domain.status,
     targetStatus,
   }
+}
+
+function openEdit(domain: Domain) {
+  editDomain.value = domain
+  editOpen.value = true
+}
+
+function onEditOpen(open: boolean) {
+  editOpen.value = open
+  if (!open) editDomain.value = null
 }
 
 const filtered = computed(() =>
@@ -205,8 +218,9 @@ const tabs = computed(() => [
           </div>
         </div>
 
-        <div class="grid grid-cols-[1fr_100px_100px_100px_50px] gap-4 px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground border-b border-border bg-muted/50 items-center">
+        <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_80px_100px_80px_44px] gap-4 px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground border-b border-border bg-muted/50 items-center">
           <span class="pl-6">Valoare</span>
+          <span class="text-left min-w-0">Descriere</span>
           <span class="text-left">Tip</span>
           <span class="text-center">Status</span>
           <span class="text-center">Raportări</span>
@@ -226,6 +240,7 @@ const tabs = computed(() => [
             :key="domain.id"
             :domain="domain"
             @set-status="setStatus"
+            @edit="openEdit"
           />
         </div>
 
@@ -277,6 +292,13 @@ const tabs = computed(() => [
       :open="dialogOpen"
       @update:open="dialogOpen = $event"
       @submit="addDomain"
+    />
+
+    <EditDomainDialog
+      :open="editOpen"
+      :domain="editDomain"
+      @update:open="onEditOpen"
+      @saved="fetchDomains"
     />
 
     <StatusChangeDialog

@@ -18,6 +18,7 @@ type Domain struct {
 	Value             string             `json:"value"` // Domain or IP
 	Type              string             `json:"type"`  // "Domain" or "IP"
 	Status            string             `json:"status"` // whitelist | blacklist | pending
+	Description       string             `json:"description,omitempty"` // set la primul record / primul import; nu se suprascrie la alte tichete
 	Records           []DomainRecord     `json:"records"`
 	StatusHistory     []DomainStatus     `json:"status_history"`
 	WhitelistRequests []WhitelistRequest `json:"whitelist_requests"`
@@ -102,6 +103,8 @@ type SaveRecordInput struct {
 
 // UpdateDomainInput is the request payload for partially updating a domain.
 type UpdateDomainInput struct {
-	Value  *string `json:"value,omitempty"`
-	Status *string `json:"status,omitempty"`
+	Value       *string `json:"value,omitempty"`
+	Type        *string `json:"type,omitempty"`
+	Status      *string `json:"status,omitempty"`
+	Description *string `json:"description,omitempty"`
 }

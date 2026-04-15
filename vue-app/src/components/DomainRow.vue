@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { ChevronDown, ChevronRight, Globe, Server, MoreVertical, ShieldCheck, ShieldAlert } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Globe, Server, MoreVertical, ShieldCheck, ShieldAlert, Pencil } from 'lucide-vue-next'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import DropdownMenu from '@/components/ui/DropdownMenu.vue'
@@ -13,7 +13,10 @@ const props = defineProps<{
   domain: Domain
 }>()
 
-const emit = defineEmits<{ setStatus: [id: string, status: DomainStatusValue] }>()
+const emit = defineEmits<{
+  setStatus: [id: string, status: DomainStatusValue]
+  edit: [domain: Domain]
+}>()
 
 const expanded = ref(false)
 const expandedPanelRef = ref<HTMLElement | null>(null)
@@ -95,17 +98,24 @@ function recordsAsTickets(records: DomainRecord[]) {
   <div class="border-b border-border last:border-b-0">
     <button
       type="button"
-      class="w-full grid grid-cols-[1fr_100px_100px_100px_50px] gap-4 items-center px-4 py-3 hover:bg-muted/50 transition-colors text-left"
+      class="w-full grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_80px_100px_80px_44px] gap-4 items-center px-4 py-3 hover:bg-muted/50 transition-colors text-left"
       @click="expanded = !expanded"
     >
-      <span class="flex items-center gap-2">
-        <span class="text-muted-foreground">
+      <span class="flex items-center gap-2 min-w-0">
+        <span class="text-muted-foreground shrink-0">
           <ChevronDown v-if="expanded" class="h-4 w-4" />
           <ChevronRight v-else class="h-4 w-4" />
         </span>
-        <Server v-if="domain.type === 'IP'" class="h-3.5 w-3.5 text-muted-foreground" />
-        <Globe v-else class="h-3.5 w-3.5 text-muted-foreground" />
-        <span class="font-mono text-xs">{{ domain.value }}</span>
+        <Server v-if="domain.type === 'IP'" class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <Globe v-else class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span class="font-mono text-xs truncate">{{ domain.value }}</span>
+      </span>
+
+      <span
+        class="text-xs text-muted-foreground truncate min-w-0"
+        :title="domain.description || '—'"
+      >
+        {{ domain.description?.trim() ? domain.description : '—' }}
       </span>
 
       <span class="flex justify-start">
@@ -135,6 +145,14 @@ function recordsAsTickets(records: DomainRecord[]) {
             </Button>
           </template>
           <template #content>
+            <button
+              type="button"
+              class="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
+              @click="emit('edit', domain)"
+            >
+              <Pencil class="h-3.5 w-3.5 mr-2 shrink-0" />
+              Editează
+            </button>
             <button
               type="button"
               class="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap"

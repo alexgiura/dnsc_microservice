@@ -9,18 +9,23 @@ CREATE TABLE IF NOT EXISTS core.domains (
     value TEXT NOT NULL,
     type TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('whitelist', 'blacklist', 'pending')),
+    description TEXT,
     pnrisc_last_synced_at TIMESTAMPTZ,
     pnrisc_sync_status TEXT,
     pnrisc_remote_id TEXT,
     last_updated TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Baze create înainte de coloana description: adaugă fără a recrea tabela
+ALTER TABLE core.domains ADD COLUMN IF NOT EXISTS description TEXT;
+
 CREATE OR REPLACE FUNCTION core.domains_touch_last_updated()
 RETURNS TRIGGER AS $$
 BEGIN
   IF (OLD.value IS DISTINCT FROM NEW.value
       OR OLD.type IS DISTINCT FROM NEW.type
-      OR OLD.status IS DISTINCT FROM NEW.status) THEN
+      OR OLD.status IS DISTINCT FROM NEW.status
+      OR OLD.description IS DISTINCT FROM NEW.description) THEN
     NEW.last_updated := now();
   END IF;
   RETURN NEW;

@@ -41,6 +41,8 @@ export interface Domain {
   value: string
   type: string
   status: DomainStatusValue
+  /** Descriere la nivel de domeniu (primul tichet); opțional */
+  description?: string
   records: DomainRecord[]
   status_history?: DomainStatus[]
   whitelist_requests?: WhitelistRequest[]

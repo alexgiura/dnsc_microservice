@@ -88,12 +88,17 @@ func (s *domainService) SaveDomain(ctx context.Context, input models.SaveDomainI
 		if _, err := models.ParseDomainStatus(st); err != nil {
 			return nil, err
 		}
+		domainDescription := ""
+		if len(input.Records) > 0 {
+			domainDescription = strings.TrimSpace(input.Records[0].Description)
+		}
 		domain := &models.Domain{
-			ID:      uuid.New(),
-			Value:   input.Value,
-			Type:    typ,
-			Status:  st,
-			Records: nil,
+			ID:          uuid.New(),
+			Value:       input.Value,
+			Type:        typ,
+			Status:      st,
+			Description: domainDescription,
+			Records:     nil,
 		}
 		for _, r := range input.Records {
 			domain.Records = append(domain.Records, models.DomainRecord{
@@ -186,22 +191,39 @@ func (s *domainService) AutoWhitelistStaleDomains(ctx context.Context, cutoff ti
 	return nil
 }
 
-// UpdateDomain updates only Value and/or status
+// UpdateDomain applies Value (și Type derivat), Type (validat față de value dacă nu s-a trimis value), Status, Description.
 func (s *domainService) UpdateDomain(ctx context.Context, id uuid.UUID, input models.UpdateDomainInput) (*models.Domain, error) {
 	current, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if input.Value != nil {
-		current.Value = *input.Value
-		current.Type = domainTypeFromValue(current.Value)
+		v := strings.TrimSpace(*input.Value)
+		if v == "" {
+			return nil, fmt.Errorf("value cannot be empty")
+		}
+		current.Value = v
+		current.Type = domainTypeFromValue(v)
+	}
+	if input.Type != nil && input.Value == nil {
+		t := strings.TrimSpace(*input.Type)
+		if t != models.DomainTypeDomain && t != models.DomainTypeIP {
+			return nil, fmt.Errorf("invalid type: must be %q or %q", models.DomainTypeDomain, models.DomainTypeIP)
+		}
+		if domainTypeFromValue(current.Value) != t {
+			return nil, fmt.Errorf("type does not match value")
+		}
+		current.Type = t
 	}
 	if input.Status != nil {
-		st, err := models.ParseDomainStatus(*input.Status)
+		st, err := models.ParseDomainStatus(strings.TrimSpace(*input.Status))
 		if err != nil {
 			return nil, err
 		}
 		current.Status = st
+	}
+	if input.Description != nil {
+		current.Description = strings.TrimSpace(*input.Description)
 	}
 	if err := s.repo.Update(ctx, current); err != nil {
 		return nil, err

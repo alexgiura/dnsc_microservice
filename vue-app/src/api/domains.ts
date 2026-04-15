@@ -20,7 +20,9 @@ export interface SaveDomainPayload {
 
 export interface UpdateDomainPayload {
   value?: string
+  type?: string
   status?: DomainStatusValue
+  description?: string
 }
 
 export interface WhitelistDomainPayload {

@@ -13,5 +13,5 @@ type PNRISCDomainPayload struct {
 	Type       string
 	Status    string // whitelist | blacklist | pending
 	DateAdded *time.Time // latest domain_status.changed_at where status=blacklist
-	Reason    string     // description from latest domain_record by date (PNRISC JSON "reason")
+	Reason    string     // core.domains.description (PNRISC JSON "reason"; fără fallback la domain_records)
 }

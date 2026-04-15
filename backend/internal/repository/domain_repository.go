@@ -44,6 +44,13 @@ type domainRepository struct {
 	db *pgxpool.Pool
 }
 
+func domainDescriptionFromNull(ns sql.NullString) string {
+	if ns.Valid {
+		return ns.String
+	}
+	return ""
+}
+
 // NewDomainRepository creates a new domain repository
 func NewDomainRepository(db *pgxpool.Pool) DomainRepository {
 	return &domainRepository{db: db}
@@ -58,9 +65,9 @@ func (r *domainRepository) Insert(ctx context.Context, domain *models.Domain) er
 	defer tx.Rollback(ctx)
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO core.domains (id, value, type, status)
-		VALUES ($1, $2, $3, $4)
-	`, domain.ID, domain.Value, domain.Type, domain.Status)
+		INSERT INTO core.domains (id, value, type, status, description)
+		VALUES ($1, $2, $3, $4, $5)
+	`, domain.ID, domain.Value, domain.Type, domain.Status, domain.Description)
 	if err != nil {
 		return fmt.Errorf("insert domain: %w", err)
 	}
@@ -122,12 +129,14 @@ func (r *domainRepository) InsertRecords(ctx context.Context, domainID uuid.UUID
 // GetByID retrieves a domain by ID and loads its records
 func (r *domainRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Domain, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT id, value, type, status FROM core.domains WHERE id = $1
+		SELECT id, value, type, status, description FROM core.domains WHERE id = $1
 	`, id)
 	var d models.Domain
-	if err := row.Scan(&d.ID, &d.Value, &d.Type, &d.Status); err != nil {
+	var descNS sql.NullString
+	if err := row.Scan(&d.ID, &d.Value, &d.Type, &d.Status, &descNS); err != nil {
 		return nil, fmt.Errorf("get domain by id: %w", err)
 	}
+	d.Description = domainDescriptionFromNull(descNS)
 	records, err := r.getRecordsByDomainID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -224,7 +233,7 @@ func (r *domainRepository) getWhitelistRequestsByDomainID(ctx context.Context, d
 // List retrieves all domains with their records
 func (r *domainRepository) List(ctx context.Context) ([]*models.Domain, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, value, type, status FROM core.domains ORDER BY value
+		SELECT id, value, type, status, description FROM core.domains ORDER BY value
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("list domains: %w", err)
@@ -233,9 +242,11 @@ func (r *domainRepository) List(ctx context.Context) ([]*models.Domain, error) {
 	var domains []*models.Domain
 	for rows.Next() {
 		var d models.Domain
-		if err := rows.Scan(&d.ID, &d.Value, &d.Type, &d.Status); err != nil {
+		var descNS sql.NullString
+		if err := rows.Scan(&d.ID, &d.Value, &d.Type, &d.Status, &descNS); err != nil {
 			return nil, fmt.Errorf("scan domain: %w", err)
 		}
+		d.Description = domainDescriptionFromNull(descNS)
 		records, err := r.getRecordsByDomainID(ctx, d.ID)
 		if err != nil {
 			return nil, err
@@ -343,11 +354,11 @@ func (r *domainRepository) CreateWhitelistRequest(ctx context.Context, request *
 	return request, nil
 }
 
-// Update updates domain fields (value, type, status)
+// Update updates domain fields (value, type, status, description)
 func (r *domainRepository) Update(ctx context.Context, domain *models.Domain) error {
 	_, err := r.db.Exec(ctx, `
-		UPDATE core.domains SET value = $2, type = $3, status = $4 WHERE id = $1
-	`, domain.ID, domain.Value, domain.Type, domain.Status)
+		UPDATE core.domains SET value = $2, type = $3, status = $4, description = $5 WHERE id = $1
+	`, domain.ID, domain.Value, domain.Type, domain.Status, domain.Description)
 	if err != nil {
 		return fmt.Errorf("update domain: %w", err)
 	}
@@ -357,15 +368,17 @@ func (r *domainRepository) Update(ctx context.Context, domain *models.Domain) er
 // GetByValueAndType finds a domain by value and type (with records)
 func (r *domainRepository) GetByValueAndType(ctx context.Context, value, typ string) (*models.Domain, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT id, value, type, status FROM core.domains WHERE value = $1 AND type = $2
+		SELECT id, value, type, status, description FROM core.domains WHERE value = $1 AND type = $2
 	`, value, typ)
 	var d models.Domain
-	if err := row.Scan(&d.ID, &d.Value, &d.Type, &d.Status); err != nil {
+	var descNS sql.NullString
+	if err := row.Scan(&d.ID, &d.Value, &d.Type, &d.Status, &descNS); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get by value/type: %w", err)
 	}
+	d.Description = domainDescriptionFromNull(descNS)
 	records, err := r.getRecordsByDomainID(ctx, d.ID)
 	if err != nil {
 		return nil, err
@@ -458,9 +471,9 @@ func (r *domainRepository) UpsertRTIRDomainRecord(ctx context.Context, rec model
 	if errors.Is(err, pgx.ErrNoRows) {
 		domainID = uuid.New()
 		_, err = tx.Exec(ctx, `
-			INSERT INTO core.domains (id, value, type, status)
-			VALUES ($1, $2, $3, $4)
-		`, domainID, rec.Value, rec.Type, models.DomainStatusPending)
+			INSERT INTO core.domains (id, value, type, status, description)
+			VALUES ($1, $2, $3, $4, $5)
+		`, domainID, rec.Value, rec.Type, models.DomainStatusPending, rec.Description)
 		if err != nil {
 			return fmt.Errorf("insert domain from rtir: %w", err)
 		}
@@ -517,11 +530,12 @@ func (r *domainRepository) ListDomainIDsForPNRISCSync(ctx context.Context, limit
 
 func (r *domainRepository) GetPNRISCSyncPayload(ctx context.Context, domainID uuid.UUID) (*models.PNRISCDomainPayload, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT value, type, status FROM core.domains WHERE id = $1
+		SELECT value, type, status, description FROM core.domains WHERE id = $1
 	`, domainID)
 	var p models.PNRISCDomainPayload
+	var domainDesc sql.NullString
 	p.DomainID = domainID
-	if err := row.Scan(&p.Value, &p.Type, &p.Status); err != nil {
+	if err := row.Scan(&p.Value, &p.Type, &p.Status, &domainDesc); err != nil {
 		return nil, fmt.Errorf("get domain for pnrisc: %w", err)
 	}
 
@@ -537,21 +551,9 @@ func (r *domainRepository) GetPNRISCSyncPayload(ctx context.Context, domainID uu
 		p.DateAdded = &t
 	}
 
-	var desc sql.NullString
-	errDesc := r.db.QueryRow(ctx, `
-		SELECT description FROM core.domain_records
-		WHERE domain_id = $1
-		ORDER BY date DESC
-		LIMIT 1
-	`, domainID).Scan(&desc)
-	if errDesc != nil {
-		if errors.Is(errDesc, pgx.ErrNoRows) {
-			p.Reason = ""
-		} else {
-			return nil, fmt.Errorf("pnrisc last record description: %w", errDesc)
-		}
-	} else if desc.Valid {
-		p.Reason = strings.TrimSpace(desc.String)
+	// PNRISC "reason" = doar descrierea din core.domains (fără fallback la domain_records).
+	if domainDesc.Valid {
+		p.Reason = strings.TrimSpace(domainDesc.String)
 	}
 
 	return &p, nil
