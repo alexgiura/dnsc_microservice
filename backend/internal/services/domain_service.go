@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const rtirImportSource = "rtir-play-sync"
+const rtirImportSource = "rtir-sync"
 
 // DomainService defines the interface for domain business logic
 type DomainService interface {
@@ -28,8 +28,8 @@ type DomainService interface {
 	RequestWhitelist(ctx context.Context, domainID uuid.UUID, input models.CreateWhitelistRequestInput) (*models.WhitelistRequest, error)
 	AutoWhitelistStaleDomains(ctx context.Context, cutoff time.Time, changedBy, notes string) error
 	UpdateDomain(ctx context.Context, id uuid.UUID, input models.UpdateDomainInput) (*models.Domain, error)
-	// SyncRTIRPlayDomains searches RTIR tickets, loads each by ID, upserts domains + checkpoint.
-	SyncRTIRPlayDomains(ctx context.Context) error
+	// SyncRTIRDomains searches RTIR tickets, loads each by ID, upserts domains + checkpoint.
+	SyncRTIRDomains(ctx context.Context) error
 	// SyncPNRISCDomains POSTs domains whose last_updated is newer than pnrisc_last_synced_at (excluding status pending), then marks sync.
 	SyncPNRISCDomains(ctx context.Context) error
 	// TryReimportRTIRTicket GETs RTIR ticket by id and runs the same upsert path as the periodic sync.
@@ -231,7 +231,7 @@ func (s *domainService) UpdateDomain(ctx context.Context, id uuid.UUID, input mo
 	return current, nil
 }
 
-func (s *domainService) SyncRTIRPlayDomains(ctx context.Context) error {
+func (s *domainService) SyncRTIRDomains(ctx context.Context) error {
 	if s.rtir == nil {
 		return fmt.Errorf("rtir client is nil")
 	}
@@ -239,32 +239,32 @@ func (s *domainService) SyncRTIRPlayDomains(ctx context.Context) error {
 	syncStartedAt := time.Now().UTC()
 	cutoff, loc, err := s.rtirSyncCutoffAndLoc(ctx)
 	if err != nil {
-		return fmt.Errorf("rtir play sync: %w", err)
+		return fmt.Errorf("rtir sync: %w", err)
 	}
 
 	refs, err := s.rtir.SearchTickets(ctx, cutoff, loc)
 	if err != nil {
-		return fmt.Errorf("rtir play sync: %w", err)
+		return fmt.Errorf("rtir sync: %w", err)
 	}
 
 	var failed []string
 	for _, ref := range refs {
 		if err := s.syncOneRTIRTicket(ctx, ref.ID, syncStartedAt); err != nil {
-			log.Printf("[rtir-play-sync] ticket %s: %v", ref.ID, err)
+			log.Printf("[rtir-sync] ticket %s: %v", ref.ID, err)
 			failed = append(failed, ref.ID)
 		}
 	}
 
-	log.Printf("[rtir-play-sync] done: tickets=%d failed=%d cutoff=%s",
+	log.Printf("[rtir-sync] done: tickets=%d failed=%d cutoff=%s",
 		len(refs), len(failed), cutoff.Format(time.RFC3339))
 	if len(failed) > 0 {
-		return fmt.Errorf("rtir play sync: failed ticket ids: %v", failed)
+		return fmt.Errorf("rtir sync: failed ticket ids: %v", failed)
 	}
 	return nil
 }
 
 func (s *domainService) rtirSyncCutoffAndLoc(ctx context.Context) (cutoff time.Time, loc *time.Location, err error) {
-	lastSync, err := s.repo.GetLastRTIRPlaySync(ctx)
+	lastSync, err := s.repo.GetLastRTIRSync(ctx)
 	if err != nil {
 		return time.Time{}, nil, err
 	}
@@ -311,7 +311,7 @@ func (s *domainService) syncOneRTIRTicket(ctx context.Context, ticketID string, 
 	}
 	// Clear any row left from a previous failed sync for this ticket (scheduler or manual retry).
 	if err := s.repo.DeleteRTIRImportError(ctx, ticketID); err != nil {
-		log.Printf("[rtir-play-sync] delete import error row ticket %s: %v", ticketID, err)
+		log.Printf("[rtir-sync] delete import error row ticket %s: %v", ticketID, err)
 	}
 	return nil
 }

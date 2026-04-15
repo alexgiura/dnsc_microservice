@@ -23,7 +23,7 @@ type App struct {
 	server        *server.Server
 	dbPool        *pgxpool.Pool
 	sched         *scheduler.DomainAutoWhitelistScheduler
-	rtirPlaySched *scheduler.DomainRTIRPlaySyncScheduler
+	rtirSyncSched *scheduler.DomainRTIRSyncScheduler
 	pnriscSched   *scheduler.DomainPNRISCSyncScheduler
 }
 
@@ -40,9 +40,9 @@ func NewApp(cfg *config.Config) (*App, error) {
 	repo := repository.NewRepository(pool)
 
 	rtirClient := rtir.NewClient(rtir.Config{
-		BaseURL:       cfg.DomainRTIRPlaySyncSettings.URL,
-		Token:         cfg.DomainRTIRPlaySyncSettings.Token,
-		SkipTLSVerify: cfg.DomainRTIRPlaySyncSettings.SkipTLSVerify,
+		BaseURL:       cfg.DomainRTIRSyncSettings.URL,
+		Token:         cfg.DomainRTIRSyncSettings.Token,
+		SkipTLSVerify: cfg.DomainRTIRSyncSettings.SkipTLSVerify,
 	})
 
 	var pnriscClient *pnrisc.Client
@@ -58,8 +58,8 @@ func NewApp(cfg *config.Config) (*App, error) {
 		repo,
 		rtirClient,
 		pnriscClient,
-		cfg.DomainRTIRPlaySyncSettings.Timezone,
-		cfg.DomainRTIRPlaySyncSettings.OverlapMinutes,
+		cfg.DomainRTIRSyncSettings.Timezone,
+		cfg.DomainRTIRSyncSettings.OverlapMinutes,
 		cfg.SessionTTL(),
 	)
 
@@ -73,13 +73,13 @@ func NewApp(cfg *config.Config) (*App, error) {
 		cfg.DomainAutoWhitelistSettings.Notes,
 	)
 
-	rtirPlayScheduler := scheduler.NewDomainRTIRPlaySyncScheduler(
+	rtirSyncScheduler := scheduler.NewDomainRTIRSyncScheduler(
 		appServices.Domain,
-		cfg.DomainRTIRPlaySyncSettings.Enabled,
-		cfg.DomainRTIRPlaySyncSettings.URL,
-		cfg.DomainRTIRPlaySyncSettings.Schedule,
-		cfg.DomainRTIRPlaySyncSettings.Timezone,
-		cfg.DomainRTIRPlaySyncSettings.Token,
+		cfg.DomainRTIRSyncSettings.Enabled,
+		cfg.DomainRTIRSyncSettings.URL,
+		cfg.DomainRTIRSyncSettings.Schedule,
+		cfg.DomainRTIRSyncSettings.Timezone,
+		cfg.DomainRTIRSyncSettings.Token,
 	)
 
 	pnriscScheduler := scheduler.NewDomainPNRISCSyncScheduler(
@@ -102,7 +102,7 @@ func NewApp(cfg *config.Config) (*App, error) {
 		server:        srv,
 		dbPool:        pool,
 		sched:         autoScheduler,
-		rtirPlaySched: rtirPlayScheduler,
+		rtirSyncSched: rtirSyncScheduler,
 		pnriscSched:   pnriscScheduler,
 	}, nil
 }
@@ -118,9 +118,9 @@ func (app *App) Run(ctx context.Context) error {
 			return fmt.Errorf("start auto-whitelist scheduler: %w", err)
 		}
 	}
-	if app.rtirPlaySched != nil {
-		if err := app.rtirPlaySched.Start(ctx); err != nil {
-			return fmt.Errorf("start RTIR Play sync scheduler: %w", err)
+	if app.rtirSyncSched != nil {
+		if err := app.rtirSyncSched.Start(ctx); err != nil {
+			return fmt.Errorf("start RTIR sync scheduler: %w", err)
 		}
 	}
 	if app.pnriscSched != nil {
@@ -161,8 +161,8 @@ func (app *App) Shutdown(ctx context.Context) error {
 	if app.sched != nil {
 		app.sched.Stop()
 	}
-	if app.rtirPlaySched != nil {
-		app.rtirPlaySched.Stop()
+	if app.rtirSyncSched != nil {
+		app.rtirSyncSched.Stop()
 	}
 	if app.pnriscSched != nil {
 		app.pnriscSched.Stop()

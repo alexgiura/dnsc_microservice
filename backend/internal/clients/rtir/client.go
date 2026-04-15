@@ -89,7 +89,7 @@ func (c *Client) SearchTickets(ctx context.Context, updatedAfter time.Time, loc 
 			return nil, fmt.Errorf("rtir search page %d: HTTP %d: %s", page, status, strings.TrimSpace(string(body)))
 		}
 
-		var resp models.RTIRPlayTicketsResponse
+		var resp models.RTIRTicketsResponse
 		if err := json.Unmarshal(body, &resp); err != nil {
 			return nil, fmt.Errorf("rtir search decode page %d: %w", page, err)
 		}

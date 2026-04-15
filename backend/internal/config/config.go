@@ -36,18 +36,18 @@ type DomainAutoWhitelistSettings struct {
 	Notes          string `env:"DOMAIN_AUTO_WHITELIST_NOTES" envDefault:"Auto-whitelisted by system."`
 }
 
-// DomainRTIRPlaySyncSettings configures the periodic job that GETs an external
-// RTIR Play endpoint (same network, e.g. rtir-play.dnsc.ro) and imports domains.
-type DomainRTIRPlaySyncSettings struct {
-	Enabled  bool   `env:"DOMAIN_RTIR_PLAY_SYNC_ENABLED" envDefault:"false"`
-	URL      string `env:"DOMAIN_RTIR_PLAY_SYNC_URL" envDefault:""`
-	Schedule string `env:"DOMAIN_RTIR_PLAY_SYNC_SCHEDULE" envDefault:"0 0 3 * * *"` // seconds min hour dom mon dow
-	Timezone string `env:"DOMAIN_RTIR_PLAY_SYNC_TIMEZONE" envDefault:"UTC"`
-	Token    string `env:"DOMAIN_RTIR_PLAY_SYNC_TOKEN" envDefault:""`
+// DomainRTIRSyncSettings configures the periodic job that GETs the RTIR REST API
+// (SearchTickets + GetTicketByID) and imports domains into core.
+type DomainRTIRSyncSettings struct {
+	Enabled  bool   `env:"DOMAIN_RTIR_SYNC_ENABLED" envDefault:"false"`
+	URL      string `env:"DOMAIN_RTIR_SYNC_URL" envDefault:""`
+	Schedule string `env:"DOMAIN_RTIR_SYNC_SCHEDULE" envDefault:"0 0 3 * * *"` // seconds min hour dom mon dow
+	Timezone string `env:"DOMAIN_RTIR_SYNC_TIMEZONE" envDefault:"UTC"`
+	Token    string `env:"DOMAIN_RTIR_SYNC_TOKEN" envDefault:""`
 	// Overlap subtracted from last_successful_sync_at when building the Updated > cutoff (default 5 minutes).
-	OverlapMinutes int `env:"DOMAIN_RTIR_PLAY_SYNC_OVERLAP_MINUTES" envDefault:"5"`
+	OverlapMinutes int `env:"DOMAIN_RTIR_SYNC_OVERLAP_MINUTES" envDefault:"5"`
 	// Dev only: disable TLS verification for RTIR HTTPS (e.g. internal CA not in container).
-	SkipTLSVerify bool `env:"DOMAIN_RTIR_PLAY_SYNC_SKIP_TLS_VERIFY" envDefault:"false"`
+	SkipTLSVerify bool `env:"DOMAIN_RTIR_SYNC_SKIP_TLS_VERIFY" envDefault:"false"`
 }
 
 // DomainPNRISCSyncSettings configures the job that POSTs changed domains to PNRISC.
@@ -76,7 +76,7 @@ type Config struct {
 	AppSettings                 AppSettings
 	DatabaseSettings            DatabaseSettings
 	DomainAutoWhitelistSettings DomainAutoWhitelistSettings
-	DomainRTIRPlaySyncSettings  DomainRTIRPlaySyncSettings
+	DomainRTIRSyncSettings DomainRTIRSyncSettings
 	DomainPNRISCSyncSettings    DomainPNRISCSyncSettings
 	// Session / CORS (cookie-based auth)
 	SessionCookieName    string `env:"SESSION_COOKIE_NAME" envDefault:"session_id"`

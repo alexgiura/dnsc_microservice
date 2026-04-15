@@ -27,7 +27,7 @@ type DomainRepository interface {
 	InsertRecords(ctx context.Context, domainID uuid.UUID, records []models.DomainRecord) error
 	FindAutoWhitelistCandidateDomainIDs(ctx context.Context, cutoff time.Time) ([]uuid.UUID, error)
 
-	GetLastRTIRPlaySync(ctx context.Context) (*time.Time, error)
+	GetLastRTIRSync(ctx context.Context) (*time.Time, error)
 	UpsertRTIRDomainRecord(ctx context.Context, rec models.DomainRTIRRecord) error
 
 	ListDomainIDsForPNRISCSync(ctx context.Context, limit int) ([]uuid.UUID, error)
@@ -233,7 +233,7 @@ func (r *domainRepository) getWhitelistRequestsByDomainID(ctx context.Context, d
 // List retrieves all domains with their records
 func (r *domainRepository) List(ctx context.Context) ([]*models.Domain, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, value, type, status, description FROM core.domains ORDER BY value
+		SELECT id, value, type, status, description FROM core.domains ORDER BY last_updated DESC
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("list domains: %w", err)
@@ -414,13 +414,13 @@ func (r *domainRepository) FindAutoWhitelistCandidateDomainIDs(ctx context.Conte
 	return ids, rows.Err()
 }
 
-func (r *domainRepository) GetLastRTIRPlaySync(ctx context.Context) (*time.Time, error) {
+func (r *domainRepository) GetLastRTIRSync(ctx context.Context) (*time.Time, error) {
 	row := r.db.QueryRow(ctx, `
 		SELECT MAX(last_successful_sync_at) FROM core.domain_records WHERE last_successful_sync_at IS NOT NULL
 	`)
 	var nt sql.NullTime
 	if err := row.Scan(&nt); err != nil {
-		return nil, fmt.Errorf("get last rtir play sync: %w", err)
+		return nil, fmt.Errorf("get last rtir sync: %w", err)
 	}
 	if !nt.Valid {
 		return nil, nil
@@ -480,7 +480,7 @@ func (r *domainRepository) UpsertRTIRDomainRecord(ctx context.Context, rec model
 		_, err = tx.Exec(ctx, `
 			INSERT INTO core.domain_status (id, domain_id, status, changed_by, notes)
 			VALUES ($1, $2, $3, $4, $5)
-		`, uuid.New(), domainID, models.DomainStatusPending, "rtir-play-sync", "first record")
+		`, uuid.New(), domainID, models.DomainStatusPending, "rtir-sync", "first record")
 		if err != nil {
 			return fmt.Errorf("insert initial domain_status from rtir: %w", err)
 		}
@@ -601,7 +601,7 @@ func (r *domainRepository) UpsertRTIRImportError(ctx context.Context, ticketID, 
 		errorMessage = errorMessage[:rtirImportErrMsgMax]
 	}
 	if strings.TrimSpace(source) == "" {
-		source = "rtir-play-sync"
+		source = "rtir-sync"
 	}
 	if ticketDate.IsZero() {
 		ticketDate = time.Now().UTC()

@@ -11,8 +11,8 @@ import (
 	"dnsc_microservice/internal/services"
 )
 
-// DomainRTIRPlaySyncScheduler periodically GETs RTIR /REST/2.0/tickets. URL, token, schedule, timezone come from config.
-type DomainRTIRPlaySyncScheduler struct {
+// DomainRTIRSyncScheduler periodically GETs RTIR /REST/2.0/tickets. URL, token, schedule, timezone come from config.
+type DomainRTIRSyncScheduler struct {
 	domainSvc services.DomainService
 	enabled   bool
 	url       string
@@ -23,14 +23,14 @@ type DomainRTIRPlaySyncScheduler struct {
 	cron *cron.Cron
 }
 
-func NewDomainRTIRPlaySyncScheduler(
+func NewDomainRTIRSyncScheduler(
 	domainSvc services.DomainService,
 	enabled bool,
 	url, schedule, timezone, token string,
-) *DomainRTIRPlaySyncScheduler {
+) *DomainRTIRSyncScheduler {
 	loc, err := time.LoadLocation(timezone)
 	if err != nil {
-		log.Printf("[rtir-play-sync] invalid timezone=%q: %v; using UTC", timezone, err)
+		log.Printf("[rtir-sync] invalid timezone=%q: %v; using UTC", timezone, err)
 		loc = time.UTC
 	}
 
@@ -44,7 +44,7 @@ func NewDomainRTIRPlaySyncScheduler(
 		cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger)),
 	)
 
-	return &DomainRTIRPlaySyncScheduler{
+	return &DomainRTIRSyncScheduler{
 		domainSvc: domainSvc,
 		enabled:   enabled,
 		url:       strings.TrimSpace(url),
@@ -55,16 +55,16 @@ func NewDomainRTIRPlaySyncScheduler(
 	}
 }
 
-func (s *DomainRTIRPlaySyncScheduler) Start(ctx context.Context) error {
+func (s *DomainRTIRSyncScheduler) Start(ctx context.Context) error {
 	if !s.enabled {
 		return nil
 	}
 	if s.url == "" {
-		log.Printf("[rtir-play-sync] enabled but DOMAIN_RTIR_PLAY_SYNC_URL is empty; scheduler not started")
+		log.Printf("[rtir-sync] enabled but DOMAIN_RTIR_SYNC_URL is empty; scheduler not started")
 		return nil
 	}
 	if s.token == "" {
-		log.Printf("[rtir-play-sync] enabled but DOMAIN_RTIR_PLAY_SYNC_TOKEN is empty; scheduler not started")
+		log.Printf("[rtir-sync] enabled but DOMAIN_RTIR_SYNC_TOKEN is empty; scheduler not started")
 		return nil
 	}
 
@@ -72,11 +72,11 @@ func (s *DomainRTIRPlaySyncScheduler) Start(ctx context.Context) error {
 		runCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
 
-		log.Printf("[rtir-play-sync] job started; url=%s timezone=%s", s.url, s.timezone)
-		if err := s.domainSvc.SyncRTIRPlayDomains(runCtx); err != nil {
-			log.Printf("[rtir-play-sync] job failed: %v", err)
+		log.Printf("[rtir-sync] job started; url=%s timezone=%s", s.url, s.timezone)
+		if err := s.domainSvc.SyncRTIRDomains(runCtx); err != nil {
+			log.Printf("[rtir-sync] job failed: %v", err)
 		} else {
-			log.Printf("[rtir-play-sync] job completed")
+			log.Printf("[rtir-sync] job completed")
 		}
 	})
 	if err != nil {
@@ -84,15 +84,15 @@ func (s *DomainRTIRPlaySyncScheduler) Start(ctx context.Context) error {
 	}
 
 	s.cron.Start()
-	log.Printf("[rtir-play-sync] started; schedule=%q timezone=%s", s.schedule, s.timezone)
+	log.Printf("[rtir-sync] started; schedule=%q timezone=%s", s.schedule, s.timezone)
 	return nil
 }
 
-func (s *DomainRTIRPlaySyncScheduler) Stop() {
+func (s *DomainRTIRSyncScheduler) Stop() {
 	if s.cron == nil {
 		return
 	}
 	ctx := s.cron.Stop()
 	<-ctx.Done()
-	log.Printf("[rtir-play-sync] stopped")
+	log.Printf("[rtir-sync] stopped")
 }

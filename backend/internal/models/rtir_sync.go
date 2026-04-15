@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// RTIRPlayTicketsResponse is the RTIR REST 2.0 /tickets search JSON body.
-type RTIRPlayTicketsResponse struct {
+// RTIRTicketsResponse is the RTIR REST 2.0 /tickets search JSON body.
+type RTIRTicketsResponse struct {
 	Total   int             `json:"total"`
 	Page    int             `json:"page"`
 	Count   int             `json:"count"`
