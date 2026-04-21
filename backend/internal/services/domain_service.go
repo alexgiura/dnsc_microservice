@@ -36,6 +36,7 @@ type DomainService interface {
 	GetDomainByID(ctx context.Context, id uuid.UUID) (*models.Domain, error)
 	GetDomains(ctx context.Context) ([]*models.Domain, error)
 	GetPublicBlacklistedDomains(ctx context.Context) ([]*models.PublicDomain, error)
+	GetDashboard(ctx context.Context) (*models.DashboardResponse, error)
 	ChangeDomainStatus(ctx context.Context, id uuid.UUID, status string, changedBy, notes string) error
 	RequestWhitelist(ctx context.Context, domainID uuid.UUID, input models.CreateWhitelistRequestInput) (*models.WhitelistRequest, error)
 	AutoWhitelistStaleDomains(ctx context.Context, cutoff time.Time, changedBy, notes string) error
@@ -163,6 +164,11 @@ func (s *domainService) GetDomains(ctx context.Context) ([]*models.Domain, error
 
 func (s *domainService) GetPublicBlacklistedDomains(ctx context.Context) ([]*models.PublicDomain, error) {
 	return s.repo.ListPublicBlacklisted(ctx)
+}
+
+// GetDashboard returns aggregated counts, latest domain records, and top tags for the admin dashboard.
+func (s *domainService) GetDashboard(ctx context.Context) (*models.DashboardResponse, error) {
+	return s.repo.GetDashboard(ctx)
 }
 
 // pickTicketIDForRTReject returns the RT ticket id to update when rejecting: newest record with source rtir, else newest with any non-empty ticket_id.

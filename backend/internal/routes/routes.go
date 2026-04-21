@@ -27,6 +27,7 @@ func RegisterRoutes(appServices *services.AppServices, cfg *config.Config) http.
 	router.HandleFunc("/auth/logout", authHandler.Logout).Methods("POST")
 	router.HandleFunc("/auth/me", authHandler.Me).Methods("GET")
 
+	router.HandleFunc("/api/dashboard", domainHandler.GetDashboard).Methods("GET")
 	router.HandleFunc("/api/domains", domainHandler.SaveDomain).Methods("POST")
 	router.HandleFunc("/api/domains", domainHandler.GetDomains).Methods("GET")
 	router.HandleFunc("/api/domains/{id}", domainHandler.GetDomainByID).Methods("GET")

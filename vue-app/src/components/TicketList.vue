@@ -22,6 +22,12 @@ function formatDateTime(v: string): string {
   return s.slice(0, 16)
 }
 
+/** RTIR pagină tichet (id din raportare). */
+function rtirTicketDisplayUrl(ticketId: string): string {
+  const id = (ticketId ?? '').trim()
+  return `https://rtir.dnsc.ro/Ticket/Display.html?id=${encodeURIComponent(id)}`
+}
+
 defineProps<{
   tickets: Ticket[]
 }>()
@@ -65,10 +71,17 @@ defineProps<{
           <Info class="h-3.5 w-3.5" />
           <span class="font-medium text-foreground">{{ ticket.source }}</span>
         </span>
-        <button type="button" class="text-xs font-medium text-success hover:underline flex items-center gap-1">
+        <a
+          v-if="ticket.ticketId?.trim()"
+          :href="rtirTicketDisplayUrl(ticket.ticketId)"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-xs font-medium text-success hover:underline flex items-center gap-1"
+        >
           View Details
           <ExternalLink class="h-3 w-3" />
-        </button>
+        </a>
+        <span v-else class="text-xs text-muted-foreground">—</span>
       </div>
     </div>
   </div>

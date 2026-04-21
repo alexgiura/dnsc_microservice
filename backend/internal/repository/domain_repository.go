@@ -38,6 +38,8 @@ type DomainRepository interface {
 	UpsertRTIRImportError(ctx context.Context, ticketID, source, errorMessage string, ticketDate time.Time) error
 	DeleteRTIRImportError(ctx context.Context, ticketID string) error
 	ListRTIRImportErrors(ctx context.Context) ([]models.RTIRImportError, error)
+
+	GetDashboard(ctx context.Context) (*models.DashboardResponse, error)
 }
 
 type domainRepository struct {
@@ -652,4 +654,83 @@ func (r *domainRepository) ListRTIRImportErrors(ctx context.Context) ([]models.R
 		list = append(list, e)
 	}
 	return list, rows.Err()
+}
+
+func (r *domainRepository) GetDashboard(ctx context.Context) (*models.DashboardResponse, error) {
+	out := &models.DashboardResponse{
+		RecentRecords: []models.DashboardRecentRecord{},
+		TopTags:       []models.DashboardTagCount{},
+	}
+
+	row := r.db.QueryRow(ctx, `
+		SELECT
+			COUNT(*)::int,
+			COUNT(*) FILTER (WHERE status = 'blacklist')::int,
+			COUNT(*) FILTER (WHERE status = 'whitelist')::int,
+			COUNT(*) FILTER (WHERE status = 'pending')::int,
+			COUNT(*) FILTER (WHERE status = 'rejected')::int
+		FROM core.domains
+	`)
+	if err := row.Scan(
+		&out.Counts.Total,
+		&out.Counts.Blacklist,
+		&out.Counts.Whitelist,
+		&out.Counts.Pending,
+		&out.Counts.Rejected,
+	); err != nil {
+		return nil, fmt.Errorf("dashboard counts: %w", err)
+	}
+
+	recRows, err := r.db.Query(ctx, `
+		SELECT dr.id, dr.domain_id, d.value, d.type, d.status, dr.ticket_id, dr.date, dr.source
+		FROM core.domain_records dr
+		INNER JOIN core.domains d ON d.id = dr.domain_id
+		ORDER BY dr.date DESC
+		LIMIT 10
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard recent records: %w", err)
+	}
+	defer recRows.Close()
+	for recRows.Next() {
+		var rec models.DashboardRecentRecord
+		var srcNS sql.NullString
+		if err := recRows.Scan(&rec.ID, &rec.DomainID, &rec.Value, &rec.Type, &rec.Status, &rec.TicketID, &rec.Date, &srcNS); err != nil {
+			return nil, fmt.Errorf("scan dashboard record: %w", err)
+		}
+		if srcNS.Valid {
+			rec.Source = strings.TrimSpace(srcNS.String)
+		}
+		out.RecentRecords = append(out.RecentRecords, rec)
+	}
+	if err := recRows.Err(); err != nil {
+		return nil, fmt.Errorf("dashboard recent records: %w", err)
+	}
+
+	tagRows, err := r.db.Query(ctx, `
+		SELECT trim(both from t.tag) AS tag, COUNT(*)::int AS cnt
+		FROM core.domain_records dr
+		CROSS JOIN LATERAL unnest(dr.tags) AS t(tag)
+		WHERE dr.tags IS NOT NULL AND cardinality(dr.tags) > 0
+		GROUP BY trim(both from t.tag)
+		HAVING trim(both from t.tag) != ''
+		ORDER BY cnt DESC
+		LIMIT 10
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard top tags: %w", err)
+	}
+	defer tagRows.Close()
+	for tagRows.Next() {
+		var tc models.DashboardTagCount
+		if err := tagRows.Scan(&tc.Tag, &tc.Count); err != nil {
+			return nil, fmt.Errorf("scan dashboard tag: %w", err)
+		}
+		out.TopTags = append(out.TopTags, tc)
+	}
+	if err := tagRows.Err(); err != nil {
+		return nil, fmt.Errorf("dashboard top tags: %w", err)
+	}
+
+	return out, nil
 }

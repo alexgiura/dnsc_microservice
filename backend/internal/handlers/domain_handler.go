@@ -91,6 +91,20 @@ func (h *DomainHandler) GetDomains(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetDashboard handles GET /api/dashboard (counts, recent records, top tags).
+func (h *DomainHandler) GetDashboard(w http.ResponseWriter, r *http.Request) {
+	data, err := h.domain.GetDashboard(r.Context())
+	if err != nil {
+		statusCode, code, message := parseDatabaseError(err)
+		respondWithError(w, statusCode, code, message, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("Error encoding dashboard response: %v", err)
+	}
+}
+
 // GetPublicBlacklistedDomains handles GET /api/public/domains
 // and returns only public-safe blacklisted domains (value/type/date).
 func (h *DomainHandler) GetPublicBlacklistedDomains(w http.ResponseWriter, r *http.Request) {
