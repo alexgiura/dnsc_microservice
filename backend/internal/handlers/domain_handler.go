@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -152,6 +153,16 @@ func (h *DomainHandler) WhitelistDomain(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.domain.ChangeDomainStatus(r.Context(), id, st, input.ChangeBy, notes); err != nil {
+		if errors.Is(err, services.ErrRejectNotPending) ||
+			errors.Is(err, services.ErrRejectRTIRDisabled) ||
+			errors.Is(err, services.ErrRejectNoTicketID) {
+			respondWithError(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error(), err.Error())
+			return
+		}
+		if strings.Contains(err.Error(), "RT ticket update failed") {
+			respondWithError(w, http.StatusBadGateway, ErrCodeValidationFailed, err.Error(), err.Error())
+			return
+		}
 		statusCode, code, message := parseDatabaseError(err)
 		respondWithError(w, statusCode, code, message, err.Error())
 		return

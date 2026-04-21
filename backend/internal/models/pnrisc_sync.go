@@ -11,7 +11,7 @@ type PNRISCDomainPayload struct {
 	DomainID   uuid.UUID
 	Value      string
 	Type       string
-	Status    string // whitelist | blacklist | pending
+	Status    string // whitelist | blacklist | pending | rejected
 	DateAdded *time.Time // latest domain_status.changed_at where status=blacklist
 	Reason    string     // core.domains.description (PNRISC JSON "reason"; fără fallback la domain_records)
 }

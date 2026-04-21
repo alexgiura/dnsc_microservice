@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import { ShieldAlert, ShieldCheck, CircleDot } from 'lucide-vue-next'
+import { ShieldAlert, ShieldCheck, CircleDot, Ban } from 'lucide-vue-next'
 import Dialog from '@/components/ui/Dialog.vue'
 import Button from '@/components/ui/Button.vue'
 import Textarea from '@/components/ui/Textarea.vue'
@@ -36,12 +36,14 @@ watch(
 function statusLabel(s: DomainStatusValue) {
   if (s === 'whitelist') return 'Whitelist'
   if (s === 'blacklist') return 'Blacklist'
+  if (s === 'rejected') return 'Respins'
   return 'Pending'
 }
 
-function badgeVariant(s: DomainStatusValue): 'trusted' | 'threat' | 'pending' {
+function badgeVariant(s: DomainStatusValue): 'trusted' | 'threat' | 'pending' | 'rejected' {
   if (s === 'whitelist') return 'trusted'
   if (s === 'blacklist') return 'threat'
+  if (s === 'rejected') return 'rejected'
   return 'pending'
 }
 
@@ -51,6 +53,7 @@ const currentBadgeVariant = computed(() => badgeVariant(props.currentStatus))
 const confirmButtonClasses = computed(() => {
   if (props.targetStatus === 'whitelist') return 'bg-success hover:bg-success/90 text-white'
   if (props.targetStatus === 'blacklist') return 'bg-destructive hover:bg-destructive/90 text-white'
+  if (props.targetStatus === 'rejected') return 'bg-secondary hover:bg-secondary/80 text-secondary-foreground'
   return 'bg-secondary hover:bg-secondary/80 text-secondary-foreground'
 })
 
@@ -131,6 +134,7 @@ async function handleConfirm() {
         >
           <ShieldCheck v-if="targetStatus === 'whitelist'" class="h-4 w-4" />
           <ShieldAlert v-else-if="targetStatus === 'blacklist'" class="h-4 w-4" />
+          <Ban v-else-if="targetStatus === 'rejected'" class="h-4 w-4" />
           <CircleDot v-else class="h-4 w-4" />
           Marchează ca {{ statusLabel(targetStatus) }}
         </Button>

@@ -7,7 +7,7 @@ export type { Domain, DomainRecord }
 
 export interface SaveDomainPayload {
   value: string
-  /** whitelist | blacklist | pending; omit sau gol → pending pe server */
+  /** whitelist | blacklist | pending | rejected; omit sau gol → pending pe server */
   status?: DomainStatusValue
   records?: Array<{
     ticket_id: string | null

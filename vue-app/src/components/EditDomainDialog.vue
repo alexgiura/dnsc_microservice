@@ -7,7 +7,7 @@ import Input from '@/components/ui/Input.vue'
 import Textarea from '@/components/ui/Textarea.vue'
 import Label from '@/components/ui/Label.vue'
 import { domainsApi } from '@/api/domains'
-import type { Domain, DomainStatusValue } from '@/models/domain'
+import type { Domain } from '@/models/domain'
 
 const props = defineProps<{
   open: boolean
@@ -20,22 +20,14 @@ const emit = defineEmits<{
 }>()
 
 const description = ref('')
-const status = ref<DomainStatusValue>('pending')
 const saving = ref(false)
 const err = ref<string | null>(null)
-
-const statusOptions: { value: DomainStatusValue; label: string }[] = [
-  { value: 'whitelist', label: 'Whitelist' },
-  { value: 'blacklist', label: 'Blacklist' },
-  { value: 'pending', label: 'Pending' },
-]
 
 watch(
   () => [props.open, props.domain] as const,
   ([isOpen, d]) => {
     if (isOpen && d) {
       description.value = d.description ?? ''
-      status.value = d.status
       err.value = null
     }
   },
@@ -49,7 +41,6 @@ async function submit() {
   try {
     await domainsApi.update(props.domain.id, {
       description: description.value.trim(),
-      status: status.value,
     })
     emit('saved')
     emit('update:open', false)
@@ -66,9 +57,7 @@ async function submit() {
     <div v-if="domain" class="grid gap-4 sm:max-w-md">
       <div class="flex flex-col space-y-1.5 text-center sm:text-left pr-6">
         <h2 class="text-lg font-semibold leading-none tracking-tight">Editează domeniu</h2>
-        <p class="text-sm text-muted-foreground">
-          Modifică descrierea și statusul domeniului.
-        </p>
+        <p class="text-sm text-muted-foreground">Modifică descrierea domeniului.</p>
       </div>
 
       <div class="flex flex-col gap-4 py-2">
@@ -86,19 +75,6 @@ async function submit() {
             placeholder="Descriere…"
             class="min-h-[80px] text-sm"
           />
-        </div>
-
-        <div class="flex flex-col gap-1.5">
-          <Label html-for="edit-domain-status">Status</Label>
-          <select
-            id="edit-domain-status"
-            v-model="status"
-            class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </select>
         </div>
 
         <p v-if="err" class="text-sm text-destructive">{{ err }}</p>

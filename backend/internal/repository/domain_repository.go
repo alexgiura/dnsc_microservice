@@ -509,10 +509,10 @@ func (r *domainRepository) ListDomainIDsForPNRISCSync(ctx context.Context, limit
 	rows, err := r.db.Query(ctx, `
 		SELECT id FROM core.domains
 		WHERE (pnrisc_last_synced_at IS NULL OR last_updated > pnrisc_last_synced_at)
-		  AND status <> $2
+		  AND status IN ($2, $3)
 		ORDER BY last_updated ASC
 		LIMIT $1
-	`, limit, models.DomainStatusPending)
+	`, limit, models.DomainStatusWhitelist, models.DomainStatusBlacklist)
 	if err != nil {
 		return nil, fmt.Errorf("list domains for pnrisc sync: %w", err)
 	}

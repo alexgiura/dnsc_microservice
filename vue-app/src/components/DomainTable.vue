@@ -11,7 +11,7 @@ import StatusChangeDialog from '@/components/StatusChangeDialog.vue'
 import { domainsApi } from '@/api/domains'
 import type { Domain, DomainStatusValue } from '@/models/domain'
 
-type FilterTab = 'all' | 'blacklist' | 'whitelist' | 'pending'
+type FilterTab = 'all' | 'blacklist' | 'whitelist' | 'pending' | 'rejected'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const
 
@@ -109,7 +109,8 @@ const filtered = computed(() =>
       activeFilter.value === 'all' ||
       (activeFilter.value === 'whitelist' && d.status === 'whitelist') ||
       (activeFilter.value === 'blacklist' && d.status === 'blacklist') ||
-      (activeFilter.value === 'pending' && d.status === 'pending')
+      (activeFilter.value === 'pending' && d.status === 'pending') ||
+      (activeFilter.value === 'rejected' && d.status === 'rejected')
     return matchesSearch && matchesFilter
   })
 )
@@ -156,12 +157,14 @@ function setPageSize(v: number) {
 const pendingCount = computed(() => domains.value.filter((d) => d.status === 'pending').length)
 const blacklistCount = computed(() => domains.value.filter((d) => d.status === 'blacklist').length)
 const whitelistCount = computed(() => domains.value.filter((d) => d.status === 'whitelist').length)
+const rejectedCount = computed(() => domains.value.filter((d) => d.status === 'rejected').length)
 
 const tabs = computed(() => [
   { key: 'all' as const, label: 'Toate', count: domains.value.length },
   { key: 'blacklist' as const, label: 'Blacklist', count: blacklistCount.value },
   { key: 'whitelist' as const, label: 'Whitelist', count: whitelistCount.value },
   { key: 'pending' as const, label: 'Pending', count: pendingCount.value },
+  { key: 'rejected' as const, label: 'Respinse', count: rejectedCount.value },
 ])
 </script>
 

@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS core.domains (
     id UUID PRIMARY KEY,
     value TEXT NOT NULL,
     type TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('whitelist', 'blacklist', 'pending')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('whitelist', 'blacklist', 'pending', 'rejected')),
     description TEXT,
     pnrisc_last_synced_at TIMESTAMPTZ,
     pnrisc_sync_status TEXT,
@@ -59,7 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_domain_records_date ON core.domain_records(date);
 CREATE TABLE IF NOT EXISTS core.domain_status (
     id UUID PRIMARY KEY,
     domain_id UUID NOT NULL REFERENCES core.domains(id) ON DELETE CASCADE,
-    status TEXT NOT NULL CHECK (status IN ('whitelist', 'blacklist', 'pending')),
+    status TEXT NOT NULL CHECK (status IN ('whitelist', 'blacklist', 'pending', 'rejected')),
     changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     changed_by TEXT NOT NULL,
     notes TEXT

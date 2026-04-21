@@ -10,12 +10,12 @@ export interface DomainRecord {
 }
 
 /** Aliniat cu BE: core.domains.status */
-export type DomainStatusValue = 'whitelist' | 'blacklist' | 'pending'
+export type DomainStatusValue = 'whitelist' | 'blacklist' | 'pending' | 'rejected'
 
 export interface DomainStatus {
   id: string
   domain_id: string
-  /** BE curent: whitelist | blacklist | pending */
+  /** BE: whitelist | blacklist | pending | rejected */
   status?: DomainStatusValue
   changed_at: string
   changed_by: string

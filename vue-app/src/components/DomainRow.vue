@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { ChevronDown, ChevronRight, Globe, Server, MoreVertical, ShieldCheck, ShieldAlert, Pencil } from 'lucide-vue-next'
+import {
+  ChevronDown,
+  ChevronRight,
+  Globe,
+  Server,
+  MoreVertical,
+  ShieldCheck,
+  ShieldAlert,
+  Pencil,
+  Ban,
+} from 'lucide-vue-next'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import DropdownMenu from '@/components/ui/DropdownMenu.vue'
@@ -65,22 +75,16 @@ function setStatus(next: DomainStatusValue) {
 function statusLabel(s: DomainStatusValue) {
   if (s === 'whitelist') return 'Whitelist'
   if (s === 'blacklist') return 'Blacklist'
+  if (s === 'rejected') return 'Respins'
   return 'Pending'
 }
 
-function badgeVariant(s: DomainStatusValue): 'trusted' | 'threat' | 'pending' {
+function badgeVariant(s: DomainStatusValue): 'trusted' | 'threat' | 'pending' | 'rejected' {
   if (s === 'whitelist') return 'trusted'
   if (s === 'blacklist') return 'threat'
+  if (s === 'rejected') return 'rejected'
   return 'pending'
 }
-
-/** O singură acțiune: pending/whitelist → Blacklist; blacklist → Whitelist */
-const menuAction = computed(() => {
-  if (status.value === 'blacklist') {
-    return { next: 'whitelist' as const, label: 'Marchează ca Whitelist' }
-  }
-  return { next: 'blacklist' as const, label: 'Marchează ca Blacklist' }
-})
 
 /** Map BE records to the ticket shape expected by TicketList */
 function recordsAsTickets(records: DomainRecord[]) {
@@ -153,18 +157,44 @@ function recordsAsTickets(records: DomainRecord[]) {
               <Pencil class="h-3.5 w-3.5 mr-2 shrink-0" />
               Editează
             </button>
-            <button
-              type="button"
-              class="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
-              @click="setStatus(menuAction.next)"
-            >
-              <ShieldCheck
-                v-if="menuAction.next === 'whitelist'"
-                class="h-3.5 w-3.5 mr-2 shrink-0 text-success"
-              />
-              <ShieldAlert v-else class="h-3.5 w-3.5 mr-2 shrink-0 text-destructive" />
-              {{ menuAction.label }}
-            </button>
+            <template v-if="status === 'pending'">
+              <button
+                type="button"
+                class="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
+                @click="setStatus('blacklist')"
+              >
+                <ShieldAlert class="h-3.5 w-3.5 mr-2 shrink-0 text-destructive" />
+                Marchează ca Blacklist
+              </button>
+              <button
+                type="button"
+                class="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
+                @click="setStatus('rejected')"
+              >
+                <Ban class="h-3.5 w-3.5 mr-2 shrink-0 text-muted-foreground" />
+                Respinge
+              </button>
+            </template>
+            <template v-else-if="status === 'blacklist'">
+              <button
+                type="button"
+                class="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
+                @click="setStatus('whitelist')"
+              >
+                <ShieldCheck class="h-3.5 w-3.5 mr-2 shrink-0 text-success" />
+                Marchează ca Whitelist
+              </button>
+            </template>
+            <template v-else-if="status === 'whitelist'">
+              <button
+                type="button"
+                class="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
+                @click="setStatus('blacklist')"
+              >
+                <ShieldAlert class="h-3.5 w-3.5 mr-2 shrink-0 text-destructive" />
+                Marchează ca Blacklist
+              </button>
+            </template>
           </template>
         </DropdownMenu>
       </span>

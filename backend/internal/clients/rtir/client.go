@@ -1,6 +1,7 @@
 package rtir
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"dnsc_microservice/internal/models"
@@ -129,4 +130,72 @@ func (c *Client) GetTicketByID(ctx context.Context, id string) (*models.RTIRTick
 	}
 	t.ID = ParseTicketID(t.IDRaw)
 	return &t, nil
+}
+
+// ticketUpdateBody is the JSON body for PUT /REST/2.0/ticket/{id} to clear blacklist on the ticket.
+type ticketUpdateBody struct {
+	CustomFields map[string]string `json:"CustomFields"`
+}
+
+// UpdateTicketBlacklistNo sets CustomFields.blacklist to "no" on the RTIR ticket.
+// Uses the same URL as GetTicketByID (DOMAIN_RTIR_SYNC_URL + /REST/2.0/ticket/{id}) with method PUT.
+// On success RT returns HTTP 200 and a JSON array of message strings, e.g. ["blacklist yes changed to no"].
+func (c *Client) UpdateTicketBlacklistNo(ctx context.Context, ticketID string) error {
+	ticketID = strings.TrimSpace(ticketID)
+	if ticketID == "" {
+		return fmt.Errorf("rtir: empty ticket id")
+	}
+	if c.base == "" {
+		return fmt.Errorf("rtir: empty base URL")
+	}
+
+	payload, err := json.Marshal(ticketUpdateBody{
+		CustomFields: map[string]string{"blacklist": "no"},
+	})
+	if err != nil {
+		return fmt.Errorf("rtir ticket %s: encode body: %w", ticketID, err)
+	}
+
+	rawURL := c.base + "/REST/2.0/ticket/" + url.PathEscape(ticketID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, rawURL, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("rtir ticket %s: %w", ticketID, err)
+	}
+	req.Header.Set("Authorization", "token "+strings.TrimSpace(c.cfg.Token))
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("rtir ticket %s: %w", ticketID, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("rtir ticket %s: read body: %w", ticketID, err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("rtir ticket %s: HTTP %d: %s", ticketID, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var msgs []string
+	if err := json.Unmarshal(body, &msgs); err != nil {
+		return fmt.Errorf("rtir ticket %s: decode response %q: %w", ticketID, strings.TrimSpace(string(body)), err)
+	}
+	if len(msgs) == 0 {
+		return fmt.Errorf("rtir ticket %s: empty response after successful update", ticketID)
+	}
+	ok := false
+	for _, m := range msgs {
+		low := strings.ToLower(m)
+		if strings.Contains(low, "blacklist") && strings.Contains(low, "no") {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("rtir ticket %s: unexpected RT response: %v", ticketID, msgs)
+	}
+	return nil
 }

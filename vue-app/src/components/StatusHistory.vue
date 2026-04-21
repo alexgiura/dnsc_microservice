@@ -20,7 +20,7 @@ const props = defineProps<{
 /** Preferă `status` din BE; fallback la `whitelist` pentru răspunsuri vechi. */
 function statusFromEntry(e: DomainStatus): DomainStatusValue {
   const s = e.status
-  if (s === 'whitelist' || s === 'blacklist' || s === 'pending') return s
+  if (s === 'whitelist' || s === 'blacklist' || s === 'pending' || s === 'rejected') return s
   if (typeof e.whitelist === 'boolean') return e.whitelist ? 'whitelist' : 'blacklist'
   return 'pending'
 }
@@ -51,12 +51,14 @@ const timeline = computed<TimelineEntry[]>(() =>
 function statusLabel(s: DomainStatusValue) {
   if (s === 'whitelist') return 'Whitelist'
   if (s === 'blacklist') return 'Blacklist'
+  if (s === 'rejected') return 'Respins'
   return 'Pending'
 }
 
-function badgeVariant(s: DomainStatusValue): 'trusted' | 'threat' | 'pending' {
+function badgeVariant(s: DomainStatusValue): 'trusted' | 'threat' | 'pending' | 'rejected' {
   if (s === 'whitelist') return 'trusted'
   if (s === 'blacklist') return 'threat'
+  if (s === 'rejected') return 'rejected'
   return 'pending'
 }
 
@@ -68,6 +70,8 @@ function formatDateTime(v: string) {
 function dotClass(s: DomainStatusValue) {
   if (s === 'blacklist') return 'bg-destructive'
   if (s === 'whitelist') return 'bg-success'
+  if (s === 'rejected') return 'bg-muted-foreground'
+  if (s === 'pending') return 'bg-yellow-500'
   return 'bg-muted-foreground'
 }
 </script>

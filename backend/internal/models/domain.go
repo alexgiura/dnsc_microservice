@@ -12,12 +12,12 @@ const (
 	DomainTypeIP     = "IP"
 )
 
-// Domain is the main entity: value, type, status (whitelist | blacklist | pending), and records.
+// Domain is the main entity: value, type, status (whitelist | blacklist | pending | rejected), and records.
 type Domain struct {
 	ID                uuid.UUID          `json:"id"`
 	Value             string             `json:"value"` // Domain or IP
 	Type              string             `json:"type"`  // "Domain" or "IP"
-	Status            string             `json:"status"` // whitelist | blacklist | pending
+	Status            string             `json:"status"` // whitelist | blacklist | pending | rejected
 	Description       string             `json:"description,omitempty"` // set la primul record / primul import; nu se suprascrie la alte tichete
 	Records           []DomainRecord     `json:"records"`
 	StatusHistory     []DomainStatus     `json:"status_history"`
@@ -40,7 +40,7 @@ type DomainRecord struct {
 type DomainStatus struct {
 	ID        uuid.UUID `json:"id"`
 	DomainID  uuid.UUID `json:"domain_id"`
-	Status    string    `json:"status"` // whitelist | blacklist | pending
+	Status    string    `json:"status"` // whitelist | blacklist | pending | rejected
 	ChangedAt time.Time `json:"changed_at"`
 	ChangedBy string    `json:"changed_by"`
 	Notes     string    `json:"notes"`
@@ -49,7 +49,7 @@ type DomainStatus struct {
 // WhitelistDomainInput is the request body for POST /api/domains/{id}/whitelist.
 type WhitelistDomainInput struct {
 	DomainID *uuid.UUID `json:"domainId,omitempty"`
-	Status   *string    `json:"status"` // whitelist | blacklist | pending
+	Status   *string    `json:"status"` // whitelist | blacklist | pending | rejected
 	ChangeBy string     `json:"changeBy"`
 	Notes    *string    `json:"notes,omitempty"`
 }
@@ -88,7 +88,7 @@ type PublicDomain struct {
 // SaveDomainInput is the request payload for creating a domain (optionally with initial records).
 type SaveDomainInput struct {
 	Value   string            `json:"value"`
-	Status  string            `json:"status,omitempty"` // whitelist | blacklist | pending; default pending
+	Status  string            `json:"status,omitempty"` // whitelist | blacklist | pending | rejected; default pending
 	Records []SaveRecordInput `json:"records,omitempty"`
 }
 

@@ -2,21 +2,33 @@ package services
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log"
+	"net"
+	"sort"
+	"strings"
+	"time"
+
 	"dnsc_microservice/internal/clients/pnrisc"
 	"dnsc_microservice/internal/clients/rtir"
 	"dnsc_microservice/internal/mappers"
 	"dnsc_microservice/internal/models"
 	"dnsc_microservice/internal/repository"
-	"fmt"
-	"log"
-	"net"
-	"strings"
-	"time"
 
 	"github.com/google/uuid"
 )
 
 const rtirImportSource = "rtir-sync"
+
+// ErrRejectNotPending is returned when status change to rejected is not from pending.
+var ErrRejectNotPending = errors.New("reject is only allowed from pending status")
+
+// ErrRejectRTIRDisabled is returned when RTIR client is not configured but reject requires RT update.
+var ErrRejectRTIRDisabled = errors.New("RTIR is not configured: cannot reject without updating the ticket in RT")
+
+// ErrRejectNoTicketID is returned when the domain has no ticket_id on its records to update in RT.
+var ErrRejectNoTicketID = errors.New("no ticket ID on this domain: rejecting requires an associated RT ticket")
 
 // DomainService defines the interface for domain business logic
 type DomainService interface {
@@ -30,7 +42,7 @@ type DomainService interface {
 	UpdateDomain(ctx context.Context, id uuid.UUID, input models.UpdateDomainInput) (*models.Domain, error)
 	// SyncRTIRDomains searches RTIR tickets, loads each by ID, upserts domains + checkpoint.
 	SyncRTIRDomains(ctx context.Context) error
-	// SyncPNRISCDomains POSTs domains whose last_updated is newer than pnrisc_last_synced_at (excluding status pending), then marks sync.
+	// SyncPNRISCDomains POSTs domains whose last_updated is newer than pnrisc_last_synced_at (only whitelist/blacklist), then marks sync.
 	SyncPNRISCDomains(ctx context.Context) error
 	// TryReimportRTIRTicket GETs RTIR ticket by id and runs the same upsert path as the periodic sync.
 	TryReimportRTIRTicket(ctx context.Context, ticketID string) error
@@ -153,9 +165,63 @@ func (s *domainService) GetPublicBlacklistedDomains(ctx context.Context) ([]*mod
 	return s.repo.ListPublicBlacklisted(ctx)
 }
 
+// pickTicketIDForRTReject returns the RT ticket id to update when rejecting: newest record with source rtir, else newest with any non-empty ticket_id.
+func pickTicketIDForRTReject(d *models.Domain) string {
+	if d == nil || len(d.Records) == 0 {
+		return ""
+	}
+	type rec struct {
+		ticketID string
+		source   string
+		date     time.Time
+	}
+	var list []rec
+	for _, r := range d.Records {
+		tid := strings.TrimSpace(r.TicketID)
+		if tid == "" {
+			continue
+		}
+		list = append(list, rec{tid, r.Source, r.Date})
+	}
+	if len(list) == 0 {
+		return ""
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].date.After(list[j].date) })
+	for _, x := range list {
+		src := strings.TrimSpace(strings.ToLower(x.source))
+		if src == "rtir" || src == "rtir-sync" {
+			return x.ticketID
+		}
+	}
+	return list[0].ticketID
+}
+
 // ChangeDomainStatus updates domain status and stores a history entry.
 func (s *domainService) ChangeDomainStatus(ctx context.Context, id uuid.UUID, status string, changedBy, notes string) error {
-	return s.repo.SetDomainStatusWithHistory(ctx, id, status, changedBy, notes)
+	st, err := models.ParseDomainStatus(status)
+	if err != nil {
+		return err
+	}
+	if st == models.DomainStatusRejected {
+		d, err := s.repo.GetByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if d.Status != models.DomainStatusPending {
+			return ErrRejectNotPending
+		}
+		if s.rtir == nil {
+			return ErrRejectRTIRDisabled
+		}
+		ticketID := pickTicketIDForRTReject(d)
+		if ticketID == "" {
+			return ErrRejectNoTicketID
+		}
+		if err := s.rtir.UpdateTicketBlacklistNo(ctx, ticketID); err != nil {
+			return fmt.Errorf("RT ticket update failed: %w", err)
+		}
+	}
+	return s.repo.SetDomainStatusWithHistory(ctx, id, st, changedBy, notes)
 }
 
 func (s *domainService) RequestWhitelist(ctx context.Context, domainID uuid.UUID, input models.CreateWhitelistRequestInput) (*models.WhitelistRequest, error) {
