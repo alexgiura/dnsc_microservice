@@ -106,7 +106,6 @@ func (h *DomainHandler) GetDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetPublicBlacklistedDomains handles GET /api/public/domains
-// and returns only public-safe blacklisted domains (value/type/date).
 func (h *DomainHandler) GetPublicBlacklistedDomains(w http.ResponseWriter, r *http.Request) {
 	items, err := h.domain.GetPublicBlacklistedDomains(r.Context())
 	if err != nil {
@@ -122,7 +121,6 @@ func (h *DomainHandler) GetPublicBlacklistedDomains(w http.ResponseWriter, r *ht
 }
 
 // WhitelistDomain handles POST /api/domains/{id}/whitelist
-// It updates core.domains.status and inserts a row into core.domain_status.
 func (h *DomainHandler) WhitelistDomain(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idStr, ok := vars["id"]
@@ -168,7 +166,6 @@ func (h *DomainHandler) WhitelistDomain(w http.ResponseWriter, r *http.Request) 
 
 	if err := h.domain.ChangeDomainStatus(r.Context(), id, st, input.ChangeBy, notes); err != nil {
 		if errors.Is(err, services.ErrRejectNotPending) ||
-			errors.Is(err, services.ErrRejectRTIRDisabled) ||
 			errors.Is(err, services.ErrRejectNoTicketID) {
 			respondWithError(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error(), err.Error())
 			return

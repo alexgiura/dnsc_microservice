@@ -31,10 +31,11 @@ type RTIRCustomField struct {
 
 // RTIRTicketDetail is GET /REST/2.0/ticket/{id} (id may be JSON number or string).
 type RTIRTicketDetail struct {
-	IDRaw        json.RawMessage    `json:"id"`
-	ID           string             `json:"-"`
-	Subject      string             `json:"Subject"`
-	LastUpdated  string             `json:"LastUpdated"`
+	IDRaw        json.RawMessage   `json:"id"`
+	ID           string            `json:"-"`
+	Subject      string            `json:"Subject"`
+	Created      string            `json:"Created"`
+	LastUpdated  string            `json:"LastUpdated"`
 	CustomFields []RTIRCustomField `json:"CustomFields"`
 }
 

@@ -24,9 +24,6 @@ const rtirImportSource = "rtir-sync"
 // ErrRejectNotPending is returned when status change to rejected is not from pending.
 var ErrRejectNotPending = errors.New("reject is only allowed from pending status")
 
-// ErrRejectRTIRDisabled is returned when RTIR client is not configured but reject requires RT update.
-var ErrRejectRTIRDisabled = errors.New("RTIR is not configured: cannot reject without updating the ticket in RT")
-
 // ErrRejectNoTicketID is returned when the domain has no ticket_id on its records to update in RT.
 var ErrRejectNoTicketID = errors.New("no ticket ID on this domain: rejecting requires an associated RT ticket")
 
@@ -202,7 +199,6 @@ func pickTicketIDForRTReject(d *models.Domain) string {
 	return list[0].ticketID
 }
 
-// ChangeDomainStatus updates domain status and stores a history entry.
 func (s *domainService) ChangeDomainStatus(ctx context.Context, id uuid.UUID, status string, changedBy, notes string) error {
 	st, err := models.ParseDomainStatus(status)
 	if err != nil {
@@ -216,16 +212,28 @@ func (s *domainService) ChangeDomainStatus(ctx context.Context, id uuid.UUID, st
 		if d.Status != models.DomainStatusPending {
 			return ErrRejectNotPending
 		}
-		if s.rtir == nil {
-			return ErrRejectRTIRDisabled
-		}
 		ticketID := pickTicketIDForRTReject(d)
 		if ticketID == "" {
 			return ErrRejectNoTicketID
 		}
+		if err := s.repo.SetDomainStatusWithHistory(ctx, id, st, changedBy, notes); err != nil {
+			return err
+		}
+		allRejected, err := s.repo.AllDomainsRejectedForTicketID(ctx, ticketID)
+		if err != nil {
+			return err
+		}
+		if !allRejected {
+			return nil
+		}
+		if s.rtir == nil {
+			log.Printf("domain reject: ticket %s has all domains rejected but RTIR is not configured; skipping RT blacklist update", ticketID)
+			return nil
+		}
 		if err := s.rtir.UpdateTicketBlacklistNo(ctx, ticketID); err != nil {
 			return fmt.Errorf("RT ticket update failed: %w", err)
 		}
+		return nil
 	}
 	return s.repo.SetDomainStatusWithHistory(ctx, id, st, changedBy, notes)
 }
@@ -245,9 +253,6 @@ func (s *domainService) RequestWhitelist(ctx context.Context, domainID uuid.UUID
 	return s.repo.CreateWhitelistRequest(ctx, req)
 }
 
-// AutoWhitelistStaleDomains sets status to whitelist for every blacklist domain whose latest
-// domain_record date is <= cutoff (or has no records at all), and inserts
-// a matching row into core.domain_status.
 func (s *domainService) AutoWhitelistStaleDomains(ctx context.Context, cutoff time.Time, changedBy, notes string) error {
 	ids, err := s.repo.FindAutoWhitelistCandidateDomainIDs(ctx, cutoff)
 	if err != nil {
@@ -263,7 +268,6 @@ func (s *domainService) AutoWhitelistStaleDomains(ctx context.Context, cutoff ti
 	return nil
 }
 
-// UpdateDomain applies Value (și Type derivat), Type (validat față de value dacă nu s-a trimis value), Status, Description.
 func (s *domainService) UpdateDomain(ctx context.Context, id uuid.UUID, input models.UpdateDomainInput) (*models.Domain, error) {
 	current, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -381,7 +385,7 @@ func (s *domainService) syncOneRTIRTicket(ctx context.Context, ticketID string, 
 			return err
 		}
 	}
-	// Clear any row left from a previous failed sync for this ticket (scheduler or manual retry).
+
 	if err := s.repo.DeleteRTIRImportError(ctx, ticketID); err != nil {
 		log.Printf("[rtir-sync] delete import error row ticket %s: %v", ticketID, err)
 	}

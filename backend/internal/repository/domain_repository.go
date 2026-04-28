@@ -25,6 +25,9 @@ type DomainRepository interface {
 	Update(ctx context.Context, domain *models.Domain) error
 	GetByValueAndType(ctx context.Context, value, typ string) (*models.Domain, error)
 	InsertRecords(ctx context.Context, domainID uuid.UUID, records []models.DomainRecord) error
+	// AllDomainsRejectedForTicketID is true when there is at least one domain_record for the ticket
+	// and every distinct domain linked to that ticket_id has status rejected.
+	AllDomainsRejectedForTicketID(ctx context.Context, ticketID string) (bool, error)
 	FindAutoWhitelistCandidateDomainIDs(ctx context.Context, cutoff time.Time) ([]uuid.UUID, error)
 
 	GetLastRTIRSync(ctx context.Context) (*time.Time, error)
@@ -184,6 +187,28 @@ func (r *domainRepository) getRecordsByDomainID(ctx context.Context, domainID uu
 		list = append(list, rec)
 	}
 	return list, rows.Err()
+}
+
+func (r *domainRepository) AllDomainsRejectedForTicketID(ctx context.Context, ticketID string) (bool, error) {
+	ticketID = strings.TrimSpace(ticketID)
+	if ticketID == "" {
+		return false, nil
+	}
+	var ok bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM core.domain_records WHERE ticket_id = $1
+		) AND NOT EXISTS (
+			SELECT 1
+			FROM core.domain_records dr
+			INNER JOIN core.domains d ON d.id = dr.domain_id
+			WHERE dr.ticket_id = $1 AND d.status <> $2
+		)
+	`, ticketID, models.DomainStatusRejected).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("all domains rejected for ticket_id: %w", err)
+	}
+	return ok, nil
 }
 
 func (r *domainRepository) getStatusHistoryByDomainID(ctx context.Context, domainID uuid.UUID) ([]models.DomainStatus, error) {
@@ -658,8 +683,9 @@ func (r *domainRepository) ListRTIRImportErrors(ctx context.Context) ([]models.R
 
 func (r *domainRepository) GetDashboard(ctx context.Context) (*models.DashboardResponse, error) {
 	out := &models.DashboardResponse{
-		RecentRecords: []models.DashboardRecentRecord{},
-		TopTags:       []models.DashboardTagCount{},
+		RecentRecords:      []models.DashboardRecentRecord{},
+		TopTags:            []models.DashboardTagCount{},
+		BlacklistFollowUps: []models.DashboardBlacklistFollowUp{},
 	}
 
 	row := r.db.QueryRow(ctx, `
@@ -705,6 +731,49 @@ func (r *domainRepository) GetDashboard(ctx context.Context) (*models.DashboardR
 	}
 	if err := recRows.Err(); err != nil {
 		return nil, fmt.Errorf("dashboard recent records: %w", err)
+	}
+
+	followRows, err := r.db.Query(ctx, `
+		SELECT d.id, d.value, d.type, d.status, lb.blacklisted_at,
+			(
+				SELECT COUNT(*)::int
+				FROM core.domain_records dr
+				WHERE dr.domain_id = d.id AND dr.date > lb.blacklisted_at
+			) AS reports_after
+		FROM core.domains d
+		INNER JOIN LATERAL (
+			SELECT MAX(ds.changed_at) AS blacklisted_at
+			FROM core.domain_status ds
+			WHERE ds.domain_id = d.id AND ds.status = 'blacklist'
+		) lb ON lb.blacklisted_at IS NOT NULL
+		WHERE d.status = 'blacklist'
+			AND EXISTS (
+				SELECT 1 FROM core.domain_records dr2
+				WHERE dr2.domain_id = d.id AND dr2.date > lb.blacklisted_at
+			)
+		ORDER BY lb.blacklisted_at DESC
+		LIMIT 100
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard blacklist follow-ups: %w", err)
+	}
+	defer followRows.Close()
+	for followRows.Next() {
+		var row models.DashboardBlacklistFollowUp
+		if err := followRows.Scan(
+			&row.DomainID,
+			&row.Value,
+			&row.Type,
+			&row.Status,
+			&row.BlacklistedAt,
+			&row.ReportsAfterBlacklist,
+		); err != nil {
+			return nil, fmt.Errorf("scan blacklist follow-up: %w", err)
+		}
+		out.BlacklistFollowUps = append(out.BlacklistFollowUps, row)
+	}
+	if err := followRows.Err(); err != nil {
+		return nil, fmt.Errorf("dashboard blacklist follow-ups: %w", err)
 	}
 
 	tagRows, err := r.db.Query(ctx, `

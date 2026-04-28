@@ -100,35 +100,46 @@ function recordsAsTickets(records: DomainRecord[]) {
 
 <template>
   <div class="border-b border-border last:border-b-0">
-    <button
-      type="button"
+    <!-- Nu învelim valoarea într-un <button>: altfel browserul blochează selectarea textului pentru copy/paste. -->
+    <div
       class="w-full grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_80px_100px_80px_44px] gap-4 items-center px-4 py-3 hover:bg-muted/50 transition-colors text-left"
-      @click="expanded = !expanded"
     >
-      <span class="flex items-center gap-2 min-w-0">
-        <span class="text-muted-foreground shrink-0">
+      <div class="flex items-center gap-2 min-w-0">
+        <button
+          type="button"
+          class="text-muted-foreground shrink-0 rounded-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          :aria-expanded="expanded"
+          aria-label="Extinde sau restrânge detaliile"
+          @click="expanded = !expanded"
+        >
           <ChevronDown v-if="expanded" class="h-4 w-4" />
           <ChevronRight v-else class="h-4 w-4" />
+        </button>
+        <span
+          class="flex min-w-0 flex-1 items-center gap-2 select-text"
+          :title="domain.value"
+        >
+          <Server v-if="domain.type === 'IP'" class="h-3.5 w-3.5 shrink-0 text-muted-foreground pointer-events-none" />
+          <Globe v-else class="h-3.5 w-3.5 shrink-0 text-muted-foreground pointer-events-none" />
+          <span class="min-w-0 truncate font-mono text-xs">{{ domain.value }}</span>
         </span>
-        <Server v-if="domain.type === 'IP'" class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        <Globe v-else class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        <span class="font-mono text-xs truncate">{{ domain.value }}</span>
-      </span>
+      </div>
 
       <span
-        class="text-xs text-muted-foreground truncate min-w-0"
+        class="text-xs text-muted-foreground truncate min-w-0 cursor-pointer"
         :title="domain.description || '—'"
+        @click="expanded = !expanded"
       >
         {{ domain.description?.trim() ? domain.description : '—' }}
       </span>
 
-      <span class="flex justify-start">
+      <span class="flex justify-start cursor-pointer" @click="expanded = !expanded">
         <Badge variant="outline" class="justify-center text-[10px] uppercase">
           {{ domain.type }}
         </Badge>
       </span>
 
-      <span class="flex justify-center">
+      <span class="flex justify-center cursor-pointer" @click="expanded = !expanded">
         <Badge
           :variant="badgeVariant(status)"
           class="justify-center text-[10px] uppercase"
@@ -137,7 +148,10 @@ function recordsAsTickets(records: DomainRecord[]) {
         </Badge>
       </span>
 
-      <span class="text-xs text-muted-foreground text-center flex justify-center">
+      <span
+        class="text-xs text-muted-foreground text-center flex justify-center cursor-pointer"
+        @click="expanded = !expanded"
+      >
         {{ recordsList.length }}
       </span>
 
@@ -198,7 +212,7 @@ function recordsAsTickets(records: DomainRecord[]) {
           </template>
         </DropdownMenu>
       </span>
-    </button>
+    </div>
 
     <div
       v-if="expanded"

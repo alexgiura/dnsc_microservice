@@ -137,9 +137,7 @@ type ticketUpdateBody struct {
 	CustomFields map[string]string `json:"CustomFields"`
 }
 
-// UpdateTicketBlacklistNo sets CustomFields.blacklist to "no" on the RTIR ticket.
-// Uses the same URL as GetTicketByID (DOMAIN_RTIR_SYNC_URL + /REST/2.0/ticket/{id}) with method PUT.
-// On success RT returns HTTP 200 and a JSON array of message strings, e.g. ["blacklist yes changed to no"].
+
 func (c *Client) UpdateTicketBlacklistNo(ctx context.Context, ticketID string) error {
 	ticketID = strings.TrimSpace(ticketID)
 	if ticketID == "" {
@@ -179,23 +177,23 @@ func (c *Client) UpdateTicketBlacklistNo(ctx context.Context, ticketID string) e
 		return fmt.Errorf("rtir ticket %s: HTTP %d: %s", ticketID, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return nil
+	}
 	var msgs []string
 	if err := json.Unmarshal(body, &msgs); err != nil {
-		return fmt.Errorf("rtir ticket %s: decode response %q: %w", ticketID, strings.TrimSpace(string(body)), err)
+		return fmt.Errorf("rtir ticket %s: decode response %q: %w", ticketID, trimmed, err)
 	}
 	if len(msgs) == 0 {
-		return fmt.Errorf("rtir ticket %s: empty response after successful update", ticketID)
+		// RT often returns [] when blacklist was already "no" (e.g. cleared in the UI).
+		return nil
 	}
-	ok := false
 	for _, m := range msgs {
 		low := strings.ToLower(m)
 		if strings.Contains(low, "blacklist") && strings.Contains(low, "no") {
-			ok = true
-			break
+			return nil
 		}
 	}
-	if !ok {
-		return fmt.Errorf("rtir ticket %s: unexpected RT response: %v", ticketID, msgs)
-	}
-	return nil
+	return fmt.Errorf("rtir ticket %s: unexpected RT response: %v", ticketID, msgs)
 }

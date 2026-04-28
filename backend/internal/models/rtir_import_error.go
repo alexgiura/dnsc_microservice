@@ -7,7 +7,7 @@ import (
 )
 
 // RTIRImportError is a row in core.rtir_import_errors (failed sync for a ticket id).
-// Date is the ticket timestamp (same semantics as core.domain_records.date / RTIR LastUpdated).
+// Date is the ticket timestamp (same semantics as core.domain_records.date / RTIR Created with LastUpdated fallback).
 type RTIRImportError struct {
 	ID            uuid.UUID `json:"id"`
 	TicketID      string    `json:"ticket_id"`

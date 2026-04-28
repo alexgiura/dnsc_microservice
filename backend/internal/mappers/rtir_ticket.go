@@ -22,18 +22,30 @@ type RTIRExtractedData struct {
 	RecordTime  time.Time
 }
 
-// RecordTimeFromRTIRTicket matches core.domain_records.date: RFC3339 LastUpdated, else UTC now.
+// RecordTimeFromRTIRTicket matches core.domain_records.date: RFC3339 Created, else LastUpdated, else UTC now.
 func RecordTimeFromRTIRTicket(t *models.RTIRTicketDetail) time.Time {
 	if t == nil {
 		return time.Now().UTC()
 	}
-	out := time.Now().UTC()
-	if strings.TrimSpace(t.LastUpdated) != "" {
-		if parsed, e := time.Parse(time.RFC3339, strings.TrimSpace(t.LastUpdated)); e == nil {
-			out = parsed.UTC()
-		}
+	if ts, ok := parseRTIRTicketTime(t.Created); ok {
+		return ts
 	}
-	return out
+	if ts, ok := parseRTIRTicketTime(t.LastUpdated); ok {
+		return ts
+	}
+	return time.Now().UTC()
+}
+
+func parseRTIRTicketTime(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed.UTC(), true
 }
 
 // ExtractRTIRTicketData maps RTIR CustomFields into internal fields. Domains lists each IOC separately (deduped).
