@@ -50,18 +50,3 @@ type DomainRTIRRecord struct {
 	RecordDate           time.Time
 	LastSuccessfulSyncAt time.Time
 }
-
-// SyncDomainRecordsCreatedDatesResult is the response body for syncing domain_records.date from RTIR Created only.
-type SyncDomainRecordsCreatedDatesResult struct {
-	TicketsTotal          int                               `json:"tickets_total"`
-	TicketsSetFromCreated int                               `json:"tickets_set_from_created"`
-	RowsUpdated           int64                             `json:"rows_updated"`
-	SkippedNoCreated      int                               `json:"skipped_no_created"`
-	Failures              []SyncDomainRecordCreatedDateFail `json:"failures,omitempty"`
-}
-
-// SyncDomainRecordCreatedDateFail records a ticket that could not update domain_records.date.
-type SyncDomainRecordCreatedDateFail struct {
-	TicketID string `json:"ticket_id"`
-	Error    string `json:"error"`
-}

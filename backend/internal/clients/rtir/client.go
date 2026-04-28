@@ -137,7 +137,6 @@ type ticketUpdateBody struct {
 	CustomFields map[string]string `json:"CustomFields"`
 }
 
-
 func (c *Client) UpdateTicketBlacklistNo(ctx context.Context, ticketID string) error {
 	ticketID = strings.TrimSpace(ticketID)
 	if ticketID == "" {
