@@ -44,6 +44,9 @@ type DomainService interface {
 	SyncPNRISCDomains(ctx context.Context) error
 	// TryReimportRTIRTicket GETs RTIR ticket by id and runs the same upsert path as the periodic sync.
 	TryReimportRTIRTicket(ctx context.Context, ticketID string) error
+	// SyncDomainRecordsDatesFromRTIRCreated loops distinct domain_records.ticket_id, GETs each RTIR ticket,
+	// and sets domain_records.date from Created only (RFC3339). Skips tickets without parseable Created.
+	SyncDomainRecordsDatesFromRTIRCreated(ctx context.Context) (*models.SyncDomainRecordsCreatedDatesResult, error)
 	// GetRTIRImportErrors returns rows from core.rtir_import_errors (failed ticket syncs).
 	GetRTIRImportErrors(ctx context.Context) ([]models.RTIRImportError, error)
 }
@@ -401,6 +404,43 @@ func (s *domainService) TryReimportRTIRTicket(ctx context.Context, ticketID stri
 		return fmt.Errorf("empty ticket id")
 	}
 	return s.syncOneRTIRTicket(ctx, ticketID, time.Now().UTC())
+}
+
+func (s *domainService) SyncDomainRecordsDatesFromRTIRCreated(ctx context.Context) (*models.SyncDomainRecordsCreatedDatesResult, error) {
+	if s.rtir == nil {
+		return nil, fmt.Errorf("rtir client is nil")
+	}
+	ids, err := s.repo.ListDistinctTicketIDsFromDomainRecords(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := &models.SyncDomainRecordsCreatedDatesResult{TicketsTotal: len(ids)}
+	for _, ticketID := range ids {
+		ticketID = strings.TrimSpace(ticketID)
+		if ticketID == "" {
+			continue
+		}
+		ticket, err := s.rtir.GetTicketByID(ctx, ticketID)
+		if err != nil {
+			out.Failures = append(out.Failures, models.SyncDomainRecordCreatedDateFail{TicketID: ticketID, Error: err.Error()})
+			continue
+		}
+		created, ok := mappers.CreatedTimeFromRTIRTicket(ticket)
+		if !ok {
+			out.SkippedNoCreated++
+			continue
+		}
+		n, err := s.repo.UpdateDomainRecordsDateByTicketID(ctx, ticketID, created)
+		if err != nil {
+			out.Failures = append(out.Failures, models.SyncDomainRecordCreatedDateFail{TicketID: ticketID, Error: err.Error()})
+			continue
+		}
+		if n > 0 {
+			out.TicketsSetFromCreated++
+			out.RowsUpdated += n
+		}
+	}
+	return out, nil
 }
 
 func (s *domainService) GetRTIRImportErrors(ctx context.Context) ([]models.RTIRImportError, error) {

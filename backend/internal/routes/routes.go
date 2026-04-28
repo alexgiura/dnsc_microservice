@@ -36,6 +36,7 @@ func RegisterRoutes(appServices *services.AppServices, cfg *config.Config) http.
 	router.HandleFunc("/api/domains/{id}/whitelist-requests", domainHandler.RequestWhitelist).Methods("POST")
 	router.HandleFunc("/api/rtir/import-errors", domainHandler.GetRTIRImportErrors).Methods("GET")
 	router.HandleFunc("/api/rtir/tickets/{ticketId}/reimport", domainHandler.ReimportRTIRTicket).Methods("POST")
+	router.HandleFunc("/api/rtir/domain-records/sync-created-dates", domainHandler.SyncDomainRecordsDatesFromRTIRCreated).Methods("POST")
 	router.HandleFunc("/api/tags", tagHandler.ListTags).Methods("GET")
 
 	withAuth := middleware.AuthMiddleware(appServices.Auth, cfg.SessionCookieName)(router)

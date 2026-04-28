@@ -36,6 +36,14 @@ func RecordTimeFromRTIRTicket(t *models.RTIRTicketDetail) time.Time {
 	return time.Now().UTC()
 }
 
+// CreatedTimeFromRTIRTicket parses RTIR ticket Created (RFC3339) only; no LastUpdated fallback.
+func CreatedTimeFromRTIRTicket(t *models.RTIRTicketDetail) (time.Time, bool) {
+	if t == nil {
+		return time.Time{}, false
+	}
+	return parseRTIRTicketTime(t.Created)
+}
+
 func parseRTIRTicketTime(s string) (time.Time, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {

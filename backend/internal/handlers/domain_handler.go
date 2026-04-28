@@ -317,3 +317,26 @@ func (h *DomainHandler) ReimportRTIRTicket(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]string{"ticket_id": ticketID, "status": "ok"})
 }
+
+// SyncDomainRecordsDatesFromRTIRCreated handles POST /api/rtir/domain-records/sync-created-dates —
+// for each distinct ticket_id in domain_records, GET ticket from RTIR and set date from Created (RFC3339 only).
+func (h *DomainHandler) SyncDomainRecordsDatesFromRTIRCreated(w http.ResponseWriter, r *http.Request) {
+	result, err := h.domain.SyncDomainRecordsDatesFromRTIRCreated(r.Context())
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "rtir client is nil") {
+			respondWithError(w, http.StatusServiceUnavailable, ErrCodeInternalError, "RTIR client not configured", msg)
+			return
+		}
+		respondWithError(w, http.StatusInternalServerError, ErrCodeInternalError, "sync created dates failed", msg)
+		return
+	}
+	if result == nil {
+		result = &models.SyncDomainRecordsCreatedDatesResult{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		log.Printf("Error encoding sync created dates response: %v", err)
+	}
+}

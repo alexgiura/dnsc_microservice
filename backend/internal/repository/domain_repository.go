@@ -42,6 +42,11 @@ type DomainRepository interface {
 	DeleteRTIRImportError(ctx context.Context, ticketID string) error
 	ListRTIRImportErrors(ctx context.Context) ([]models.RTIRImportError, error)
 
+	// ListDistinctTicketIDsFromDomainRecords returns non-empty distinct ticket_id values from core.domain_records.
+	ListDistinctTicketIDsFromDomainRecords(ctx context.Context) ([]string, error)
+	// UpdateDomainRecordsDateByTicketID sets date for all rows with the given ticket_id; returns pgx RowsAffected().
+	UpdateDomainRecordsDateByTicketID(ctx context.Context, ticketID string, date time.Time) (int64, error)
+
 	GetDashboard(ctx context.Context) (*models.DashboardResponse, error)
 }
 
@@ -802,4 +807,37 @@ func (r *domainRepository) GetDashboard(ctx context.Context) (*models.DashboardR
 	}
 
 	return out, nil
+}
+
+func (r *domainRepository) ListDistinctTicketIDsFromDomainRecords(ctx context.Context) ([]string, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT DISTINCT trim(both from ticket_id)
+		FROM core.domain_records
+		WHERE ticket_id IS NOT NULL AND trim(both from ticket_id) <> ''
+		ORDER BY 1
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list distinct domain_records ticket ids: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan ticket id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (r *domainRepository) UpdateDomainRecordsDateByTicketID(ctx context.Context, ticketID string, date time.Time) (int64, error) {
+	cmd, err := r.db.Exec(ctx, `
+		UPDATE core.domain_records SET date = $1 WHERE trim(both from ticket_id) = $2
+	`, date.UTC(), strings.TrimSpace(ticketID))
+	if err != nil {
+		return 0, fmt.Errorf("update domain_records date by ticket: %w", err)
+	}
+	return cmd.RowsAffected(), nil
 }
