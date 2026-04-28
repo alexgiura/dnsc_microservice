@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import {
   ShieldAlert,
   ShieldCheck,
@@ -13,14 +13,23 @@ import {
   TrendingUp,
   Loader2,
   BellRing,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-vue-next'
 import Badge from '@/components/ui/Badge.vue'
+import Button from '@/components/ui/Button.vue'
+import Select from '@/components/ui/Select.vue'
 import { dashboardApi } from '@/api/dashboard'
 import type { DashboardResponse } from '@/models/dashboard'
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50] as const
 
 const loading = ref(true)
 const error = ref<string | null>(null)
 const data = ref<DashboardResponse | null>(null)
+/** Paginare tabel Raportări după blacklist; implicit 10 */
+const blacklistTablePage = ref(1)
+const blacklistTablePageSize = ref<(typeof PAGE_SIZE_OPTIONS)[number]>(10)
 
 onMounted(async () => {
   loading.value = true
@@ -111,6 +120,42 @@ function formatBlacklistAt(iso: string) {
 
 const recentRecords = computed(() => data.value?.recent_records ?? [])
 const blacklistFollowUps = computed(() => data.value?.blacklist_follow_ups ?? [])
+
+const blacklistTotalPages = computed(() =>
+  Math.max(1, Math.ceil(blacklistFollowUps.value.length / blacklistTablePageSize.value))
+)
+
+const paginatedBlacklistFollowUps = computed(() => {
+  const ps = blacklistTablePageSize.value
+  const start = (blacklistTablePage.value - 1) * ps
+  return blacklistFollowUps.value.slice(start, start + ps)
+})
+
+const blacklistPageRangeStart = computed(() =>
+  blacklistFollowUps.value.length === 0
+    ? 0
+    : (blacklistTablePage.value - 1) * blacklistTablePageSize.value + 1
+)
+const blacklistPageRangeEnd = computed(() =>
+  Math.min(blacklistTablePage.value * blacklistTablePageSize.value, blacklistFollowUps.value.length)
+)
+
+const blacklistPaginationSummary = computed(() => {
+  if (blacklistFollowUps.value.length === 0) return '0 rezultate'
+  return `${blacklistPageRangeStart.value}–${blacklistPageRangeEnd.value} din ${blacklistFollowUps.value.length}`
+})
+
+function setBlacklistPageSize(v: number) {
+  blacklistTablePageSize.value = v as (typeof PAGE_SIZE_OPTIONS)[number]
+}
+
+watch(blacklistTablePageSize, () => {
+  blacklistTablePage.value = 1
+})
+
+watch(blacklistTotalPages, (tp) => {
+  if (blacklistTablePage.value > tp) blacklistTablePage.value = tp
+})
 
 const tagsData = computed(() => {
   const tags = data.value?.top_tags ?? []
@@ -283,35 +328,78 @@ const maxTagCount = computed(() => {
         >
           Nicio intrare: nu există domenii blacklist cu raportări după ultima trecere în blacklist.
         </div>
-        <div
-          v-for="row in blacklistFollowUps"
-          :key="row.domain_id"
-          class="grid grid-cols-[1fr_72px_100px_minmax(0,150px)_100px] gap-3 items-center px-5 py-3 border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors"
-        >
-          <span class="flex items-center gap-2 min-w-0 select-text">
-            <Server v-if="row.type === 'IP'" class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <Globe v-else class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span class="font-mono text-xs truncate" :title="row.value">{{ row.value }}</span>
-          </span>
-          <span class="flex justify-center">
-            <Badge variant="outline" class="text-[10px] uppercase">
-              {{ row.type }}
-            </Badge>
-          </span>
-          <span class="flex justify-center">
-            <Badge :variant="statusBadge(row.status).variant" class="text-[10px] uppercase">
-              {{ statusBadge(row.status).label }}
-            </Badge>
-          </span>
-          <span
-            class="text-[11px] text-muted-foreground text-center tabular-nums leading-tight px-0.5"
-            :title="row.blacklisted_at"
+        <div v-if="blacklistFollowUps.length > 0">
+          <div
+            v-for="row in paginatedBlacklistFollowUps"
+            :key="row.domain_id"
+            class="grid grid-cols-[1fr_72px_100px_minmax(0,150px)_100px] gap-3 items-center px-5 py-3 border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors"
           >
-            {{ formatBlacklistAt(row.blacklisted_at) }}
-          </span>
-          <span class="text-xs font-semibold text-center tabular-nums text-destructive">
-            {{ row.reports_after_blacklist }}
-          </span>
+            <span class="flex items-center gap-2 min-w-0 select-text">
+              <Server v-if="row.type === 'IP'" class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <Globe v-else class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span class="font-mono text-xs truncate" :title="row.value">{{ row.value }}</span>
+            </span>
+            <span class="flex justify-center">
+              <Badge variant="outline" class="text-[10px] uppercase">
+                {{ row.type }}
+              </Badge>
+            </span>
+            <span class="flex justify-center">
+              <Badge :variant="statusBadge(row.status).variant" class="text-[10px] uppercase">
+                {{ statusBadge(row.status).label }}
+              </Badge>
+            </span>
+            <span
+              class="text-[11px] text-muted-foreground text-center tabular-nums leading-tight px-0.5"
+              :title="row.blacklisted_at"
+            >
+              {{ formatBlacklistAt(row.blacklisted_at) }}
+            </span>
+            <span class="text-xs font-semibold text-center tabular-nums text-destructive">
+              {{ row.reports_after_blacklist }}
+            </span>
+          </div>
+
+          <div
+            class="flex items-center justify-between gap-4 border-t border-border bg-muted/30 px-5 py-3"
+          >
+            <div class="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>Rânduri per pagină:</span>
+              <Select
+                :model-value="blacklistTablePageSize"
+                :options="PAGE_SIZE_OPTIONS"
+                @update:model-value="setBlacklistPageSize"
+              />
+            </div>
+
+            <div class="flex items-center gap-2 text-sm text-muted-foreground">
+              <span class="tabular-nums">{{ blacklistPaginationSummary }}</span>
+              <div class="flex gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  type="button"
+                  class="h-8 w-8 shrink-0"
+                  :disabled="blacklistTablePage <= 1"
+                  aria-label="Pagina anterioară"
+                  @click="blacklistTablePage--"
+                >
+                  <ChevronLeft class="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  type="button"
+                  class="h-8 w-8 shrink-0"
+                  :disabled="blacklistTablePage >= blacklistTotalPages"
+                  aria-label="Pagina următoare"
+                  @click="blacklistTablePage++"
+                >
+                  <ChevronRight class="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </template>
