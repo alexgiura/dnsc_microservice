@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   Pencil,
   Ban,
+  CircleDot,
 } from 'lucide-vue-next'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
@@ -18,6 +19,14 @@ import TicketList from '@/components/TicketList.vue'
 import StatusHistory from '@/components/StatusHistory.vue'
 import WhitelistRequestList from '@/components/WhitelistRequestList.vue'
 import type { Domain, DomainRecord, DomainStatusValue } from '@/models/domain'
+import { currentUser } from '@/stores/auth'
+
+const PUBLIC_BLACKLIST_DESCRIPTIONS = ['Phishing', 'SMiShing', 'Scam', 'Impersonation'] as const
+const PRIVILEGED_BLACKLIST_USER_IDS = new Set([
+  '00000000-0000-0000-0000-000000000002',
+  '00000000-0000-0000-0000-000000000003',
+  '00000000-0000-0000-0000-000000000004',
+])
 
 const props = defineProps<{
   domain: Domain
@@ -35,6 +44,20 @@ const recordsList = computed(() => props.domain.records ?? [])
 const activeTab = ref<'tickets' | 'history' | 'whitelist'>('tickets')
 const historyCount = computed(() => props.domain.status_history?.length ?? 0)
 const whitelistCount = computed(() => props.domain.whitelist_requests?.length ?? 0)
+
+const isPrivilegedUser = computed(() => {
+  const userId = currentUser.value?.id
+  return userId != null && PRIVILEGED_BLACKLIST_USER_IDS.has(userId)
+})
+
+/** Blacklist din pending/whitelist: orice user dacă descrierea e Phishing/SMiShing/Scam/Impersonation; altfel doar cei 3 useri privilegiați. */
+const canBlacklist = computed(() => {
+  const desc = props.domain.description?.trim() ?? ''
+  if ((PUBLIC_BLACKLIST_DESCRIPTIONS as readonly string[]).includes(desc)) {
+    return true
+  }
+  return isPrivilegedUser.value
+})
 
 /** Derulează pagina astfel încât panoul expandat să nu iasă sub ecran. */
 function scrollExpandedPanelIntoView() {
@@ -173,6 +196,7 @@ function recordsAsTickets(records: DomainRecord[]) {
             </button>
             <template v-if="status === 'pending'">
               <button
+                v-if="canBlacklist"
                 type="button"
                 class="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
                 @click="setStatus('blacklist')"
@@ -201,6 +225,27 @@ function recordsAsTickets(records: DomainRecord[]) {
             </template>
             <template v-else-if="status === 'whitelist'">
               <button
+                v-if="canBlacklist"
+                type="button"
+                class="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
+                @click="setStatus('blacklist')"
+              >
+                <ShieldAlert class="h-3.5 w-3.5 mr-2 shrink-0 text-destructive" />
+                Marchează ca Blacklist
+              </button>
+            </template>
+            <template v-else-if="status === 'rejected'">
+              <button
+                v-if="isPrivilegedUser"
+                type="button"
+                class="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
+                @click="setStatus('pending')"
+              >
+                <CircleDot class="h-3.5 w-3.5 mr-2 shrink-0 text-muted-foreground" />
+                Marchează ca Pending
+              </button>
+              <button
+                v-if="isPrivilegedUser"
                 type="button"
                 class="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
                 @click="setStatus('blacklist')"

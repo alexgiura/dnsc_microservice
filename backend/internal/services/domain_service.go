@@ -73,11 +73,16 @@ func NewDomainService(repo repository.DomainRepository, rtirClient *rtir.Client,
 }
 
 func domainTypeFromValue(value string) string {
-	if value == "" {
+	v := strings.TrimSpace(value)
+	if v == "" {
 		return models.DomainTypeDomain
 	}
-	if net.ParseIP(value) != nil {
+	if net.ParseIP(v) != nil {
 		return models.DomainTypeIP
+	}
+	v = strings.TrimSuffix(v, ".")
+	if strings.Count(v, ".") >= 2 {
+		return models.DomainTypeSubdomain
 	}
 	return models.DomainTypeDomain
 }
@@ -283,8 +288,8 @@ func (s *domainService) UpdateDomain(ctx context.Context, id uuid.UUID, input mo
 	}
 	if input.Type != nil && input.Value == nil {
 		t := strings.TrimSpace(*input.Type)
-		if t != models.DomainTypeDomain && t != models.DomainTypeIP {
-			return nil, fmt.Errorf("invalid type: must be %q or %q", models.DomainTypeDomain, models.DomainTypeIP)
+		if t != models.DomainTypeDomain && t != models.DomainTypeSubdomain && t != models.DomainTypeIP {
+			return nil, fmt.Errorf("invalid type: must be %q, %q, or %q", models.DomainTypeDomain, models.DomainTypeSubdomain, models.DomainTypeIP)
 		}
 		if domainTypeFromValue(current.Value) != t {
 			return nil, fmt.Errorf("type does not match value")

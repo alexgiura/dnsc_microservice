@@ -6,18 +6,19 @@ import (
 	"github.com/google/uuid"
 )
 
-// DomainType is Domain or IP, derived from Value
+// DomainType is Domain, Subdomain, or IP, derived from Value
 const (
-	DomainTypeDomain = "Domain"
-	DomainTypeIP     = "IP"
+	DomainTypeDomain    = "Domain"
+	DomainTypeSubdomain = "Subdomain"
+	DomainTypeIP        = "IP"
 )
 
 // Domain is the main entity: value, type, status (whitelist | blacklist | pending | rejected), and records.
 type Domain struct {
 	ID                uuid.UUID          `json:"id"`
-	Value             string             `json:"value"` // Domain or IP
-	Type              string             `json:"type"`  // "Domain" or "IP"
-	Status            string             `json:"status"` // whitelist | blacklist | pending | rejected
+	Value             string             `json:"value"`                 // Domain, Subdomain, or IP
+	Type              string             `json:"type"`                  // "Domain", "Subdomain", or "IP"
+	Status            string             `json:"status"`                // whitelist | blacklist | pending | rejected
 	Description       string             `json:"description,omitempty"` // set la primul record / primul import; nu se suprascrie la alte tichete
 	Records           []DomainRecord     `json:"records"`
 	StatusHistory     []DomainStatus     `json:"status_history"`
@@ -26,14 +27,14 @@ type Domain struct {
 
 // DomainRecord is one record linked to a domain: TicketId, Description, Tags, Date, Source.
 type DomainRecord struct {
-	ID                    uuid.UUID  `json:"id"`
-	DomainID              uuid.UUID  `json:"domain_id"`
-	TicketID              string     `json:"ticket_id"`
-	Description           string     `json:"description"`
-	Tags                  []string   `json:"tags"`
-	Date                  time.Time  `json:"date"`
-	Source                string     `json:"source"`
-	LastSuccessfulSyncAt  *time.Time `json:"last_successful_sync_at,omitempty"`
+	ID                   uuid.UUID  `json:"id"`
+	DomainID             uuid.UUID  `json:"domain_id"`
+	TicketID             string     `json:"ticket_id"`
+	Description          string     `json:"description"`
+	Tags                 []string   `json:"tags"`
+	Date                 time.Time  `json:"date"`
+	Source               string     `json:"source"`
+	LastSuccessfulSyncAt *time.Time `json:"last_successful_sync_at,omitempty"`
 }
 
 // DomainStatus is one record linked to a domain: each time a status changes.
