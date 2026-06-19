@@ -36,12 +36,23 @@ type DashboardTagCount struct {
 // DashboardBlacklistFollowUp is a domain currently in blacklist with at least one
 // domain_record dated after the most recent time it was set to blacklist (in domain_status).
 type DashboardBlacklistFollowUp struct {
-	DomainID              uuid.UUID `json:"domain_id"`
-	Value                 string    `json:"value"`
-	Type                  string    `json:"type"`
-	Status                string    `json:"status"`
-	BlacklistedAt         time.Time `json:"blacklisted_at"`
-	ReportsAfterBlacklist int       `json:"reports_after_blacklist"`
+	DomainID              uuid.UUID                  `json:"domain_id"`
+	Value                 string                     `json:"value"`
+	Type                  string                     `json:"type"`
+	Status                string                     `json:"status"`
+	BlacklistedAt         time.Time                  `json:"blacklisted_at"`
+	ReportsAfterBlacklist int                        `json:"reports_after_blacklist"`
+	Records               []DashboardFollowUpRecord  `json:"records"`
+}
+
+// DashboardFollowUpRecord is one domain_record after the last blacklist transition.
+type DashboardFollowUpRecord struct {
+	ID          uuid.UUID `json:"id"`
+	TicketID    string    `json:"ticket_id"`
+	Description string    `json:"description"`
+	Tags        []string  `json:"tags"`
+	Date        time.Time `json:"date"`
+	Source      string    `json:"source,omitempty"`
 }
 
 // DashboardResponse is GET /api/dashboard payload.

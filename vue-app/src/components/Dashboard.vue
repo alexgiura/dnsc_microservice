@@ -19,6 +19,7 @@ import {
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import Select from '@/components/ui/Select.vue'
+import BlacklistFollowUpRow from '@/components/BlacklistFollowUpRow.vue'
 import { dashboardApi } from '@/api/dashboard'
 import type { DashboardResponse } from '@/models/dashboard'
 
@@ -119,7 +120,12 @@ function formatBlacklistAt(iso: string) {
 }
 
 const recentRecords = computed(() => data.value?.recent_records ?? [])
-const blacklistFollowUps = computed(() => data.value?.blacklist_follow_ups ?? [])
+const blacklistFollowUps = computed(() =>
+  (data.value?.blacklist_follow_ups ?? []).map((row) => ({
+    ...row,
+    records: row.records ?? [],
+  }))
+)
 
 const blacklistTotalPages = computed(() =>
   Math.max(1, Math.ceil(blacklistFollowUps.value.length / blacklistTablePageSize.value))
@@ -314,8 +320,9 @@ const maxTagCount = computed(() => {
           </Badge>
         </div>
         <div
-          class="grid grid-cols-[1fr_72px_100px_minmax(0,150px)_100px] gap-3 px-5 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground border-b border-border bg-muted/40"
+          class="grid grid-cols-[36px_1fr_72px_100px_minmax(0,150px)_100px] gap-3 px-5 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground border-b border-border bg-muted/40"
         >
+          <span />
           <span>Valoare</span>
           <span class="text-center">Tip</span>
           <span class="text-center">Status</span>
@@ -329,36 +336,14 @@ const maxTagCount = computed(() => {
           Nicio intrare: nu există domenii blacklist cu raportări după ultima trecere în blacklist.
         </div>
         <div v-if="blacklistFollowUps.length > 0">
-          <div
+          <BlacklistFollowUpRow
             v-for="row in paginatedBlacklistFollowUps"
             :key="row.domain_id"
-            class="grid grid-cols-[1fr_72px_100px_minmax(0,150px)_100px] gap-3 items-center px-5 py-3 border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors"
-          >
-            <span class="flex items-center gap-2 min-w-0 select-text">
-              <Server v-if="row.type === 'IP'" class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <Globe v-else class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <span class="font-mono text-xs truncate" :title="row.value">{{ row.value }}</span>
-            </span>
-            <span class="flex justify-center">
-              <Badge variant="outline" class="text-[10px] uppercase">
-                {{ row.type }}
-              </Badge>
-            </span>
-            <span class="flex justify-center">
-              <Badge :variant="statusBadge(row.status).variant" class="text-[10px] uppercase">
-                {{ statusBadge(row.status).label }}
-              </Badge>
-            </span>
-            <span
-              class="text-[11px] text-muted-foreground text-center tabular-nums leading-tight px-0.5"
-              :title="row.blacklisted_at"
-            >
-              {{ formatBlacklistAt(row.blacklisted_at) }}
-            </span>
-            <span class="text-xs font-semibold text-center tabular-nums text-destructive">
-              {{ row.reports_after_blacklist }}
-            </span>
-          </div>
+            :row="row"
+            :status-label="statusBadge(row.status).label"
+            :status-variant="statusBadge(row.status).variant"
+            :format-blacklist-at="formatBlacklistAt"
+          />
 
           <div
             class="flex items-center justify-between gap-4 border-t border-border bg-muted/30 px-5 py-3"

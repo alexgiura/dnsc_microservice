@@ -24,6 +24,15 @@ export interface DashboardTagCount {
 }
 
 /** Domenii blacklist cu raportări (tickete) după ultima blacklistare */
+export interface DashboardFollowUpRecord {
+  id: string
+  ticket_id: string
+  description: string
+  tags: string[]
+  date: string
+  source?: string
+}
+
 export interface DashboardBlacklistFollowUp {
   domain_id: string
   value: string
@@ -31,6 +40,7 @@ export interface DashboardBlacklistFollowUp {
   status: string
   blacklisted_at: string
   reports_after_blacklist: number
+  records: DashboardFollowUpRecord[]
 }
 
 export interface DashboardResponse {

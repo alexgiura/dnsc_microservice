@@ -776,6 +776,10 @@ func (r *domainRepository) GetDashboard(ctx context.Context) (*models.DashboardR
 		return nil, fmt.Errorf("dashboard blacklist follow-ups: %w", err)
 	}
 
+	if err := r.attachBlacklistFollowUpRecords(ctx, out.BlacklistFollowUps); err != nil {
+		return nil, err
+	}
+
 	tagRows, err := r.db.Query(ctx, `
 		SELECT trim(both from t.tag) AS tag, COUNT(*)::int AS cnt
 		FROM core.domain_records dr
@@ -802,4 +806,55 @@ func (r *domainRepository) GetDashboard(ctx context.Context) (*models.DashboardR
 	}
 
 	return out, nil
+}
+
+func (r *domainRepository) attachBlacklistFollowUpRecords(ctx context.Context, followUps []models.DashboardBlacklistFollowUp) error {
+	if len(followUps) == 0 {
+		return nil
+	}
+
+	ids := make([]uuid.UUID, len(followUps))
+	blacklistedAt := make(map[uuid.UUID]time.Time, len(followUps))
+	indexByDomain := make(map[uuid.UUID]int, len(followUps))
+	for i := range followUps {
+		followUps[i].Records = []models.DashboardFollowUpRecord{}
+		ids[i] = followUps[i].DomainID
+		blacklistedAt[followUps[i].DomainID] = followUps[i].BlacklistedAt
+		indexByDomain[followUps[i].DomainID] = i
+	}
+
+	rows, err := r.db.Query(ctx, `
+		SELECT dr.domain_id, dr.id, dr.ticket_id, dr.description, dr.tags, dr.date, dr.source
+		FROM core.domain_records dr
+		WHERE dr.domain_id = ANY($1)
+		ORDER BY dr.date DESC
+	`, ids)
+	if err != nil {
+		return fmt.Errorf("dashboard blacklist follow-up records: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var domainID uuid.UUID
+		var rec models.DashboardFollowUpRecord
+		var descNS, srcNS sql.NullString
+		if err := rows.Scan(&domainID, &rec.ID, &rec.TicketID, &descNS, &rec.Tags, &rec.Date, &srcNS); err != nil {
+			return fmt.Errorf("scan blacklist follow-up record: %w", err)
+		}
+		if descNS.Valid {
+			rec.Description = strings.TrimSpace(descNS.String)
+		}
+		if srcNS.Valid {
+			rec.Source = strings.TrimSpace(srcNS.String)
+		}
+		if !rec.Date.After(blacklistedAt[domainID]) {
+			continue
+		}
+		idx, ok := indexByDomain[domainID]
+		if !ok {
+			continue
+		}
+		followUps[idx].Records = append(followUps[idx].Records, rec)
+	}
+	return rows.Err()
 }

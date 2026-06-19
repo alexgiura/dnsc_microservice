@@ -27,9 +27,6 @@ function statusFromEntry(e: DomainStatus): DomainStatusValue {
 
 const historyList = computed(() => props.history ?? [])
 
-/** Tranziția from→to are sens doar cu ≥2 înregistrări în istoric. */
-const showStatusTransition = computed(() => historyList.value.length > 1)
-
 // BE trimite status_history ordonat DESC (nou -> vechi).
 const timeline = computed<TimelineEntry[]>(() =>
   historyList.value.map((entry, idx) => {
@@ -74,6 +71,10 @@ function dotClass(s: DomainStatusValue) {
   if (s === 'pending') return 'bg-yellow-500'
   return 'bg-muted-foreground'
 }
+
+function showTransition(entry: TimelineEntry) {
+  return entry.fromStatus !== entry.toStatus
+}
 </script>
 
 <template>
@@ -95,7 +96,7 @@ function dotClass(s: DomainStatusValue) {
           class="bg-card border border-border rounded-md p-3 shadow-sm hover:shadow-md transition-shadow flex flex-col w-full max-w-md"
         >
           <div class="flex items-center justify-between gap-2 mb-2 shrink-0">
-            <span v-if="showStatusTransition" class="flex items-center gap-1.5">
+            <span v-if="showTransition(entry)" class="flex items-center gap-1.5">
               <Badge :variant="badgeVariant(entry.fromStatus)" class="text-[10px] uppercase px-1.5 py-0">
                 {{ statusLabel(entry.fromStatus) }}
               </Badge>
