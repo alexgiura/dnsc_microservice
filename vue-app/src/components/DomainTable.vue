@@ -200,7 +200,13 @@ const paginatedFiltered = computed(() => {
   return filtered.value.slice(start, start + ps)
 })
 
-watch([search, activeFilter], () => {
+watch(activeFilter, () => {
+  clearSelection()
+  bulkDialog.value = null
+  currentPage.value = 1
+})
+
+watch(search, () => {
   currentPage.value = 1
 })
 
