@@ -2,7 +2,7 @@ import { computed } from 'vue'
 import { currentUser } from '@/stores/auth'
 import type { Domain } from '@/models/domain'
 
-export const PUBLIC_BLACKLIST_DESCRIPTIONS = ['Phishing', 'SMiShing', 'Scam', 'Impersonation'] as const
+export const PUBLIC_BLACKLIST_DESCRIPTIONS = ['Phishing', 'SMiShing', 'Scam', 'Impersonation', 'Malware'] as const
 
 export const PRIVILEGED_BLACKLIST_USER_IDS = new Set([
   '00000000-0000-0000-0000-000000000001',
