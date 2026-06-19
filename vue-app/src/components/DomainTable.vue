@@ -177,9 +177,16 @@ function onEditOpen(open: boolean) {
   if (!open) editDomain.value = null
 }
 
+function domainMatchesSearch(domain: Domain, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  if (domain.value.toLowerCase().includes(q)) return true
+  return (domain.records ?? []).some((r) => (r.ticket_id ?? '').toLowerCase().includes(q))
+}
+
 const filtered = computed(() =>
   domains.value.filter((d) => {
-    const matchesSearch = d.value.toLowerCase().includes(search.value.toLowerCase())
+    const matchesSearch = domainMatchesSearch(d, search.value)
     const matchesFilter =
       activeFilter.value === 'all' ||
       (activeFilter.value === 'whitelist' && d.status === 'whitelist') ||
@@ -345,11 +352,11 @@ const tabs = computed(() => [
           </div>
         </div>
         <div v-else class="flex items-center px-4 py-3 border-b border-border">
-          <div class="relative w-80">
+          <div class="relative w-full max-w-md min-w-[20rem] sm:min-w-[28rem]">
             <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               v-model="search"
-              placeholder="Caută domeniu sau IP..."
+              placeholder="Caută după domeniu, IP sau număr de tichet"
               class="pl-9 h-9 text-sm"
             />
           </div>
