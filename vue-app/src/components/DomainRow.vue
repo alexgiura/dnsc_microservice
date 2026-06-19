@@ -19,22 +19,23 @@ import TicketList from '@/components/TicketList.vue'
 import StatusHistory from '@/components/StatusHistory.vue'
 import WhitelistRequestList from '@/components/WhitelistRequestList.vue'
 import type { Domain, DomainRecord, DomainStatusValue } from '@/models/domain'
-import { currentUser } from '@/stores/auth'
+import { useDomainStatusPermissions } from '@/composables/useDomainStatusPermissions'
+import Checkbox from '@/components/ui/Checkbox.vue'
 
-const PUBLIC_BLACKLIST_DESCRIPTIONS = ['Phishing', 'SMiShing', 'Scam', 'Impersonation'] as const
-const PRIVILEGED_BLACKLIST_USER_IDS = new Set([
-  '00000000-0000-0000-0000-000000000002',
-  '00000000-0000-0000-0000-000000000003',
-  '00000000-0000-0000-0000-000000000004',
-])
+const { isPrivilegedUser, canBlacklistDomain } = useDomainStatusPermissions()
 
-const props = defineProps<{
-  domain: Domain
-}>()
+const props = withDefaults(
+  defineProps<{
+    domain: Domain
+    selected?: boolean
+  }>(),
+  { selected: false }
+)
 
 const emit = defineEmits<{
   setStatus: [id: string, status: DomainStatusValue]
   edit: [domain: Domain]
+  toggleSelect: [id: string]
 }>()
 
 const expanded = ref(false)
@@ -45,19 +46,7 @@ const activeTab = ref<'tickets' | 'history' | 'whitelist'>('tickets')
 const historyCount = computed(() => props.domain.status_history?.length ?? 0)
 const whitelistCount = computed(() => props.domain.whitelist_requests?.length ?? 0)
 
-const isPrivilegedUser = computed(() => {
-  const userId = currentUser.value?.id
-  return userId != null && PRIVILEGED_BLACKLIST_USER_IDS.has(userId)
-})
-
-/** Blacklist din pending/whitelist: orice user dacă descrierea e Phishing/SMiShing/Scam/Impersonation; altfel doar cei 3 useri privilegiați. */
-const canBlacklist = computed(() => {
-  const desc = props.domain.description?.trim() ?? ''
-  if ((PUBLIC_BLACKLIST_DESCRIPTIONS as readonly string[]).includes(desc)) {
-    return true
-  }
-  return isPrivilegedUser.value
-})
+const canBlacklist = computed(() => canBlacklistDomain(props.domain))
 
 /** Derulează pagina astfel încât panoul expandat să nu iasă sub ecran. */
 function scrollExpandedPanelIntoView() {
@@ -122,11 +111,21 @@ function recordsAsTickets(records: DomainRecord[]) {
 </script>
 
 <template>
-  <div class="border-b border-border last:border-b-0">
+  <div
+    class="border-b border-border last:border-b-0"
+    :class="selected ? 'bg-primary/5' : ''"
+  >
     <!-- Nu învelim valoarea într-un <button>: altfel browserul blochează selectarea textului pentru copy/paste. -->
     <div
-      class="w-full grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_80px_100px_80px_44px] gap-4 items-center px-4 py-3 hover:bg-muted/50 transition-colors text-left"
+      class="w-full grid grid-cols-[36px_minmax(0,1fr)_minmax(0,1fr)_80px_100px_80px_44px] gap-4 items-center px-4 py-3 hover:bg-muted/50 transition-colors text-left"
     >
+      <span class="flex justify-center">
+        <Checkbox
+          :checked="selected"
+          aria-label="Selectează rând"
+          @update:checked="emit('toggleSelect', domain.id)"
+        />
+      </span>
       <div class="flex items-center gap-2 min-w-0">
         <button
           type="button"

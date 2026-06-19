@@ -30,6 +30,7 @@ func RegisterRoutes(appServices *services.AppServices, cfg *config.Config) http.
 	router.HandleFunc("/api/dashboard", domainHandler.GetDashboard).Methods("GET")
 	router.HandleFunc("/api/domains", domainHandler.SaveDomain).Methods("POST")
 	router.HandleFunc("/api/domains", domainHandler.GetDomains).Methods("GET")
+	router.HandleFunc("/api/domains/status/bulk", domainHandler.BulkChangeDomainStatus).Methods("POST")
 	router.HandleFunc("/api/domains/{id}", domainHandler.GetDomainByID).Methods("GET")
 	router.HandleFunc("/api/domains/{id}", domainHandler.UpdateDomain).Methods("PATCH")
 	router.HandleFunc("/api/domains/{id}/whitelist", domainHandler.WhitelistDomain).Methods("POST")

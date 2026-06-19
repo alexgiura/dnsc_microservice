@@ -109,3 +109,23 @@ type UpdateDomainInput struct {
 	Status      *string `json:"status,omitempty"`
 	Description *string `json:"description,omitempty"`
 }
+
+// BulkChangeDomainStatusInput is the request body for POST /api/domains/status/bulk.
+type BulkChangeDomainStatusInput struct {
+	DomainIDs []string `json:"domainIds"`
+	Status    string   `json:"status"`
+	ChangeBy  string   `json:"changeBy"`
+	Notes     string   `json:"notes,omitempty"`
+}
+
+// BulkChangeDomainStatusFailure is one domain that could not be updated in a bulk request.
+type BulkChangeDomainStatusFailure struct {
+	ID    string `json:"id"`
+	Error string `json:"error"`
+}
+
+// BulkChangeDomainStatusResult is the response for POST /api/domains/status/bulk.
+type BulkChangeDomainStatusResult struct {
+	Succeeded []uuid.UUID                   `json:"succeeded"`
+	Failed    []BulkChangeDomainStatusFailure `json:"failed"`
+}

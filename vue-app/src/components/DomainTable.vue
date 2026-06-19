@@ -1,19 +1,24 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { Search, Plus, Loader2, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { Search, Plus, Loader2, ChevronLeft, ChevronRight, ShieldAlert, ShieldCheck, CircleDot, Ban, X } from 'lucide-vue-next'
 import Input from '@/components/ui/Input.vue'
 import Button from '@/components/ui/Button.vue'
 import Select from '@/components/ui/Select.vue'
+import Checkbox from '@/components/ui/Checkbox.vue'
 import DomainRow from '@/components/DomainRow.vue'
 import AddDomainDialog from '@/components/AddDomainDialog.vue'
 import EditDomainDialog from '@/components/EditDomainDialog.vue'
 import StatusChangeDialog from '@/components/StatusChangeDialog.vue'
 import { domainsApi } from '@/api/domains'
 import type { Domain, DomainStatusValue } from '@/models/domain'
+import { useDomainStatusPermissions } from '@/composables/useDomainStatusPermissions'
 
 type FilterTab = 'all' | 'blacklist' | 'whitelist' | 'pending' | 'rejected'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const
+
+const { canBulkBlacklistDomain, canBulkWhitelistDomain, canBulkPendingDomain, canBulkRejectDomain } =
+  useDomainStatusPermissions()
 
 const domains = ref<Domain[]>([])
 const currentPage = ref(1)
@@ -26,11 +31,16 @@ const activeFilter = ref<FilterTab>('all')
 const dialogOpen = ref(false)
 const editOpen = ref(false)
 const editDomain = ref<Domain | null>(null)
+const selectedIds = ref<Set<string>>(new Set())
 const statusDialog = ref<null | {
   domainId: string
   domainValue: string
   currentStatus: DomainStatusValue
   targetStatus: DomainStatusValue
+}>(null)
+const bulkDialog = ref<null | {
+  targetStatus: DomainStatusValue
+  domainIds: string[]
 }>(null)
 
 async function fetchDomains() {
@@ -90,6 +100,71 @@ function setStatus(id: string, targetStatus: DomainStatusValue) {
     currentStatus: domain.status,
     targetStatus,
   }
+}
+
+function toggleSelect(id: string) {
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedIds.value = next
+}
+
+function clearSelection() {
+  selectedIds.value = new Set()
+}
+
+const selectedDomains = computed(() =>
+  domains.value.filter((d) => selectedIds.value.has(d.id))
+)
+
+/** Intersecție: acțiunea bulk apare doar dacă TOATE selecțiile o permit. */
+const bulkCanBlacklist = computed(
+  () => selectedDomains.value.length > 0 && selectedDomains.value.every(canBulkBlacklistDomain)
+)
+const bulkCanWhitelist = computed(
+  () => selectedDomains.value.length > 0 && selectedDomains.value.every(canBulkWhitelistDomain)
+)
+const bulkCanPending = computed(
+  () => selectedDomains.value.length > 0 && selectedDomains.value.every(canBulkPendingDomain)
+)
+const bulkCanReject = computed(
+  () => selectedDomains.value.length > 0 && selectedDomains.value.every(canBulkRejectDomain)
+)
+const bulkHasAnyAction = computed(
+  () =>
+    bulkCanBlacklist.value ||
+    bulkCanWhitelist.value ||
+    bulkCanPending.value ||
+    bulkCanReject.value
+)
+
+const allPageSelected = computed(
+  () =>
+    paginatedFiltered.value.length > 0 &&
+    paginatedFiltered.value.every((d) => selectedIds.value.has(d.id))
+)
+
+function toggleSelectAllPage(checked: boolean) {
+  const next = new Set(selectedIds.value)
+  for (const d of paginatedFiltered.value) {
+    if (checked) next.add(d.id)
+    else next.delete(d.id)
+  }
+  selectedIds.value = next
+}
+
+function openBulkDialog(targetStatus: DomainStatusValue) {
+  if (selectedDomains.value.length === 0) return
+  bulkDialog.value = {
+    targetStatus,
+    domainIds: selectedDomains.value.map((d) => d.id),
+  }
+}
+
+function onBulkUpdated() {
+  bulkDialog.value = null
+  clearSelection()
+  fetchDomains()
 }
 
 function openEdit(domain: Domain) {
@@ -210,7 +285,60 @@ const tabs = computed(() => [
           {{ error }}
         </div>
 
-        <div class="flex items-center px-4 py-3 border-b border-border">
+        <div v-if="selectedIds.size > 0" class="flex items-center justify-between px-4 py-2.5 border-b border-border bg-primary/5">
+          <div class="flex items-center gap-3">
+            <Button variant="ghost" size="icon" class="h-7 w-7" aria-label="Anulează selecția" @click="clearSelection">
+              <X class="h-4 w-4" />
+            </Button>
+            <span class="text-sm font-medium">{{ selectedIds.size }} selectate</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <Button
+              v-if="bulkCanBlacklist"
+              size="sm"
+              variant="outline"
+              class="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              @click="openBulkDialog('blacklist')"
+            >
+              <ShieldAlert class="h-4 w-4" />
+              Marchează Blacklist
+            </Button>
+            <Button
+              v-if="bulkCanWhitelist"
+              size="sm"
+              variant="outline"
+              class="border-success/40 text-success hover:bg-success/10 hover:text-success"
+              @click="openBulkDialog('whitelist')"
+            >
+              <ShieldCheck class="h-4 w-4" />
+              Marchează Whitelist
+            </Button>
+            <Button
+              v-if="bulkCanPending"
+              size="sm"
+              variant="outline"
+              class="border-muted-foreground/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+              @click="openBulkDialog('pending')"
+            >
+              <CircleDot class="h-4 w-4" />
+              Marchează Pending
+            </Button>
+            <Button
+              v-if="bulkCanReject"
+              size="sm"
+              variant="outline"
+              class="border-muted-foreground/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+              @click="openBulkDialog('rejected')"
+            >
+              <Ban class="h-4 w-4" />
+              Respinge
+            </Button>
+            <span v-if="!bulkHasAnyAction" class="text-xs text-muted-foreground">
+              Nicio acțiune comună pentru selecție
+            </span>
+          </div>
+        </div>
+        <div v-else class="flex items-center px-4 py-3 border-b border-border">
           <div class="relative w-80">
             <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -221,8 +349,15 @@ const tabs = computed(() => [
           </div>
         </div>
 
-        <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_80px_100px_80px_44px] gap-4 px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground border-b border-border bg-muted/50 items-center">
-          <span class="pl-6">Valoare</span>
+        <div class="grid grid-cols-[36px_minmax(0,1fr)_minmax(0,1fr)_80px_100px_80px_44px] gap-4 px-4 py-2.5 text-[10px] uppercase font-semibold text-muted-foreground border-b border-border bg-muted/50 items-center">
+          <span class="flex justify-center">
+            <Checkbox
+              :checked="allPageSelected"
+              aria-label="Selectează toate"
+              @update:checked="toggleSelectAllPage($event)"
+            />
+          </span>
+          <span>Valoare</span>
           <span class="text-left min-w-0">Descriere</span>
           <span class="text-left">Tip</span>
           <span class="text-center">Status</span>
@@ -242,8 +377,10 @@ const tabs = computed(() => [
             v-for="domain in paginatedFiltered"
             :key="domain.id"
             :domain="domain"
+            :selected="selectedIds.has(domain.id)"
             @set-status="setStatus"
             @edit="openEdit"
+            @toggle-select="toggleSelect"
           />
         </div>
 
@@ -317,6 +454,20 @@ const tabs = computed(() => [
         }
       "
       @updated="fetchDomains"
+    />
+
+    <StatusChangeDialog
+      v-if="bulkDialog"
+      :open="true"
+      :target-status="bulkDialog.targetStatus"
+      :bulk-domain-ids="bulkDialog.domainIds"
+      :bulk-count="bulkDialog.domainIds.length"
+      @update:open="
+        (val) => {
+          if (!val) bulkDialog = null
+        }
+      "
+      @updated="onBulkUpdated"
     />
   </div>
 </template>

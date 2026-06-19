@@ -182,6 +182,43 @@ func (h *DomainHandler) WhitelistDomain(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BulkChangeDomainStatus handles POST /api/domains/status/bulk
+func (h *DomainHandler) BulkChangeDomainStatus(w http.ResponseWriter, r *http.Request) {
+	var input models.BulkChangeDomainStatusInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		respondWithError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "Invalid request body", err.Error())
+		return
+	}
+
+	if len(input.DomainIDs) == 0 {
+		respondWithError(w, http.StatusBadRequest, ErrCodeValidationFailed, "domainIds is required", "")
+		return
+	}
+	if strings.TrimSpace(input.Status) == "" {
+		respondWithError(w, http.StatusBadRequest, ErrCodeValidationFailed, "status is required", "")
+		return
+	}
+	if _, err := models.ParseDomainStatus(strings.TrimSpace(input.Status)); err != nil {
+		respondWithError(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error(), "")
+		return
+	}
+	if strings.TrimSpace(input.ChangeBy) == "" {
+		respondWithError(w, http.StatusBadRequest, ErrCodeValidationFailed, "changeBy is required", "")
+		return
+	}
+
+	result, err := h.domain.ChangeDomainStatusBulk(r.Context(), input)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error(), err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		log.Printf("Error encoding bulk status response: %v", err)
+	}
+}
+
 // RequestWhitelist handles POST /api/domains/{id}/whitelist-requests
 // and creates one request in core.whitelist_requests.
 func (h *DomainHandler) RequestWhitelist(w http.ResponseWriter, r *http.Request) {

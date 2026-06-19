@@ -35,6 +35,7 @@ type DomainService interface {
 	GetPublicBlacklistedDomains(ctx context.Context) ([]*models.PublicDomain, error)
 	GetDashboard(ctx context.Context) (*models.DashboardResponse, error)
 	ChangeDomainStatus(ctx context.Context, id uuid.UUID, status string, changedBy, notes string) error
+	ChangeDomainStatusBulk(ctx context.Context, input models.BulkChangeDomainStatusInput) (*models.BulkChangeDomainStatusResult, error)
 	RequestWhitelist(ctx context.Context, domainID uuid.UUID, input models.CreateWhitelistRequestInput) (*models.WhitelistRequest, error)
 	AutoWhitelistStaleDomains(ctx context.Context, cutoff time.Time, changedBy, notes string) error
 	UpdateDomain(ctx context.Context, id uuid.UUID, input models.UpdateDomainInput) (*models.Domain, error)
@@ -241,6 +242,61 @@ func (s *domainService) ChangeDomainStatus(ctx context.Context, id uuid.UUID, st
 		return nil
 	}
 	return s.repo.SetDomainStatusWithHistory(ctx, id, st, changedBy, notes)
+}
+
+func (s *domainService) ChangeDomainStatusBulk(ctx context.Context, input models.BulkChangeDomainStatusInput) (*models.BulkChangeDomainStatusResult, error) {
+	if len(input.DomainIDs) == 0 {
+		return nil, fmt.Errorf("domainIds is required")
+	}
+	st, err := models.ParseDomainStatus(strings.TrimSpace(input.Status))
+	if err != nil {
+		return nil, err
+	}
+	changeBy := strings.TrimSpace(input.ChangeBy)
+	if changeBy == "" {
+		return nil, fmt.Errorf("changeBy is required")
+	}
+	notes := strings.TrimSpace(input.Notes)
+
+	result := &models.BulkChangeDomainStatusResult{
+		Succeeded: []uuid.UUID{},
+		Failed:    []models.BulkChangeDomainStatusFailure{},
+	}
+	seen := make(map[uuid.UUID]struct{}, len(input.DomainIDs))
+
+	for _, idStr := range input.DomainIDs {
+		idStr = strings.TrimSpace(idStr)
+		if idStr == "" {
+			result.Failed = append(result.Failed, models.BulkChangeDomainStatusFailure{
+				ID:    idStr,
+				Error: "invalid id format",
+			})
+			continue
+		}
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			result.Failed = append(result.Failed, models.BulkChangeDomainStatusFailure{
+				ID:    idStr,
+				Error: "invalid id format",
+			})
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+
+		if err := s.ChangeDomainStatus(ctx, id, st, changeBy, notes); err != nil {
+			result.Failed = append(result.Failed, models.BulkChangeDomainStatusFailure{
+				ID:    id.String(),
+				Error: err.Error(),
+			})
+			continue
+		}
+		result.Succeeded = append(result.Succeeded, id)
+	}
+
+	return result, nil
 }
 
 func (s *domainService) RequestWhitelist(ctx context.Context, domainID uuid.UUID, input models.CreateWhitelistRequestInput) (*models.WhitelistRequest, error) {

@@ -32,6 +32,23 @@ export interface WhitelistDomainPayload {
   domainId?: string
 }
 
+export interface BulkChangeDomainStatusPayload {
+  domainIds: string[]
+  status: DomainStatusValue
+  changeBy: string
+  notes?: string
+}
+
+export interface BulkChangeDomainStatusFailure {
+  id: string
+  error: string
+}
+
+export interface BulkChangeDomainStatusResult {
+  succeeded: string[]
+  failed: BulkChangeDomainStatusFailure[]
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const text = await res.text()
@@ -87,5 +104,20 @@ export const domainsApi = {
       }),
     })
     return handleResponse<void>(res)
+  },
+
+  /** POST /api/domains/status/bulk */
+  async setDomainStatusBulk(payload: BulkChangeDomainStatusPayload): Promise<BulkChangeDomainStatusResult> {
+    const res = await apiFetch(`${base()}/status/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        domainIds: payload.domainIds,
+        status: payload.status,
+        changeBy: payload.changeBy,
+        notes: payload.notes ?? undefined,
+      }),
+    })
+    return handleResponse<BulkChangeDomainStatusResult>(res)
   },
 }
